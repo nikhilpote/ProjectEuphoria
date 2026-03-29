@@ -1,0 +1,7 @@
+- [Euphoria Backend Tech Stack](project_tech_stack.md) — TypeScript/NestJS/Postgres/Redis/Kysely — canonical stack choices with justifications
+- [Euphoria Critical Architectural Constraints](project_key_constraints.md) — Non-negotiable constraints: wallet locking, answer encryption, show isolation, IAP validation
+- [Euphoria Monorepo Structure](project_monorepo_structure.md) — Directory layout, key file paths, npm workspaces + Turborepo conventions
+- [Euphoria Auth Architecture](project_auth_architecture.md) — Mobile id_token flow, guest accounts, JWKS verification, JWT secrets strategy
+- [Euphoria LiveOps & Trivia Architecture](project_liveops_trivia.md) — Feature flags service design, trivia module, points curve, GamesModule barrel pattern
+- [Euphoria Boot Sequence & Infrastructure](project_boot_sequence.md) — Verified boot order, service ports, Docker container names, startup gotchas
+- [Euphoria Testing Patterns](project_testing_patterns.md) — Jest config format, supertest import, Kysely mock pattern, register endpoint bug

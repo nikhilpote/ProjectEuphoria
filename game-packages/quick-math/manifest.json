@@ -1,0 +1,12 @@
+{
+  "id": "quick_math",
+  "name": "Quick Math",
+  "version": "1.0.0",
+  "description": "Solve a math expression — pick the correct answer from 4 options",
+  "layout": "overlay_bottom",
+  "configSchema": {
+    "expression": { "type": "string", "label": "Math expression (e.g. 12 × 7 = ?)" },
+    "options":    { "type": "string[4]", "label": "Answer options" },
+    "correctIndex": { "type": "number", "label": "Correct option (0–3)", "min": 0, "max": 3 }
+  }
+}

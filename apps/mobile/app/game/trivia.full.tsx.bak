@@ -1,0 +1,1077 @@
+/**
+ * Trivia Game Screen
+ *
+ * State machine: idle → loading → question_active → answer_selected →
+ *                showing_result → next_question → ... → finished
+ *
+ * Design principles:
+ * - All questions preloaded before first question appears (no mid-game spinners)
+ * - Timer driven by Date.now() deltas for accuracy — never setInterval counts
+ * - Answer tap is optimistic: UI updates instantly, server validates in background
+ * - All animations run on the UI thread via Reanimated 3 worklets
+ */
+
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Dimensions,
+  ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  withSequence,
+  withRepeat,
+  Easing,
+  cancelAnimation,
+  interpolateColor,
+  type SharedValue,
+} from 'react-native-reanimated';
+import { useAuthStore } from '@/store/auth.store';
+import {
+  getRandomTriviaQuestions,
+  validateTriviaAnswer,
+} from '@/api/games.api';
+import type { TriviaQuestionPublic, TriviaAnswerResult } from '@/api/games.api';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const COLORS = {
+  bg: '#0A0A0F',
+  surface: '#13131A',
+  surfaceHigh: '#1E1E2E',
+  border: '#2A2A3D',
+  accent: '#7C3AED',
+  white: '#FFFFFF',
+  offWhite: '#E8E8F0',
+  muted: '#6B6B8A',
+  gold: '#F59E0B',
+  // Answer states
+  answerDefault: '#1A1A2E',
+  answerDefaultBorder: '#2E2E4A',
+  answerSelected: '#1E2456',
+  answerSelectedBorder: '#3D52FF',
+  answerCorrect: '#0E2D1E',
+  answerCorrectBorder: '#22C55E',
+  answerWrong: '#2D0E0E',
+  answerWrongBorder: '#EF4444',
+  // Timer bar
+  timerGreen: '#22C55E',
+  timerYellow: '#EAB308',
+  timerRed: '#EF4444',
+} as const;
+
+const { width: SCREEN_W } = Dimensions.get('window');
+const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
+const ADVANCE_DELAY_MS = 1200;
+const DEFAULT_QUESTION_COUNT = 5;
+const DEFAULT_TIME_LIMIT_MS = 15_000;
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type GameMode = 'practice' | 'playclip' | 'liveshow';
+
+type GamePhase =
+  | 'idle'
+  | 'loading'
+  | 'question_active'
+  | 'answer_selected'
+  | 'showing_result'
+  | 'next_question'
+  | 'finished';
+
+interface GameState {
+  phase: GamePhase;
+  questions: TriviaQuestionPublic[];
+  currentIndex: number;
+  selectedOptionId: string | null;
+  lastResult: TriviaAnswerResult | null;
+  score: number;
+  coinsEarned: number;
+  errorMessage: string | null;
+}
+
+type GameAction =
+  | { type: 'LOADING_START' }
+  | { type: 'QUESTIONS_LOADED'; questions: TriviaQuestionPublic[] }
+  | { type: 'LOADING_ERROR'; message: string }
+  | { type: 'ANSWER_SELECTED'; optionId: string }
+  | { type: 'RESULT_RECEIVED'; result: TriviaAnswerResult }
+  | { type: 'ADVANCE' }
+  | { type: 'TIMEOUT' };
+
+function initialState(): GameState {
+  return {
+    phase: 'idle',
+    questions: [],
+    currentIndex: 0,
+    selectedOptionId: null,
+    lastResult: null,
+    score: 0,
+    coinsEarned: 0,
+    errorMessage: null,
+  };
+}
+
+function gameReducer(state: GameState, action: GameAction): GameState {
+  switch (action.type) {
+    case 'LOADING_START':
+      return { ...state, phase: 'loading', errorMessage: null };
+
+    case 'QUESTIONS_LOADED':
+      return {
+        ...state,
+        phase: 'question_active',
+        questions: action.questions,
+        currentIndex: 0,
+        selectedOptionId: null,
+        lastResult: null,
+        score: 0,
+        coinsEarned: 0,
+      };
+
+    case 'LOADING_ERROR':
+      return { ...state, phase: 'idle', errorMessage: action.message };
+
+    case 'ANSWER_SELECTED':
+      if (state.phase !== 'question_active') return state;
+      return { ...state, phase: 'answer_selected', selectedOptionId: action.optionId };
+
+    case 'RESULT_RECEIVED':
+      return {
+        ...state,
+        phase: 'showing_result',
+        lastResult: action.result,
+        score: state.score + (action.result.isCorrect ? 1 : 0),
+        coinsEarned: state.coinsEarned + action.result.coinsAwarded,
+      };
+
+    case 'TIMEOUT':
+      if (state.phase !== 'question_active') return state;
+      return { ...state, phase: 'answer_selected', selectedOptionId: null };
+
+    case 'ADVANCE': {
+      const nextIndex = state.currentIndex + 1;
+      if (nextIndex >= state.questions.length) {
+        return { ...state, phase: 'finished' };
+      }
+      return {
+        ...state,
+        phase: 'question_active',
+        currentIndex: nextIndex,
+        selectedOptionId: null,
+        lastResult: null,
+      };
+    }
+
+    default:
+      return state;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Timer hook — Date.now() based, accurate to ±16ms
+// ---------------------------------------------------------------------------
+
+interface TimerHandle {
+  /** Normalized 0→1 (full → empty) progress shared value for the bar */
+  progress: SharedValue<number>;
+  /** Start counting down for `durationMs` */
+  start: (durationMs: number, onExpire: () => void) => void;
+  /** Cancel any running countdown */
+  cancel: () => void;
+}
+
+function useGameTimer(): TimerHandle {
+  const progress = useSharedValue(0);
+  const rafId = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+  const startAtRef = useRef<number>(0);
+  const durationRef = useRef<number>(0);
+  const onExpireRef = useRef<(() => void) | null>(null);
+
+  const cancel = useCallback(() => {
+    if (rafId.current != null) {
+      cancelAnimationFrame(rafId.current);
+      rafId.current = null;
+    }
+    cancelAnimation(progress);
+  }, [progress]);
+
+  const start = useCallback(
+    (durationMs: number, onExpire: () => void) => {
+      cancel();
+      startAtRef.current = Date.now();
+      durationRef.current = durationMs;
+      onExpireRef.current = onExpire;
+      progress.value = 0;
+
+      // Animate the bar via Reanimated (smooth, UI-thread)
+      progress.value = withTiming(1, {
+        duration: durationMs,
+        easing: Easing.linear,
+      });
+
+      // Use rAF loop (JS thread) only to detect expiry — we do NOT use it to
+      // drive the bar. rAF on RN is driven by the native vsync, accurate enough.
+      function tick() {
+        const elapsed = Date.now() - startAtRef.current;
+        if (elapsed >= durationRef.current) {
+          onExpireRef.current?.();
+          return;
+        }
+        rafId.current = requestAnimationFrame(tick);
+      }
+      rafId.current = requestAnimationFrame(tick);
+    },
+    [cancel, progress],
+  );
+
+  useEffect(() => {
+    return () => cancel();
+  }, [cancel]);
+
+  return { progress, start, cancel };
+}
+
+// ---------------------------------------------------------------------------
+// TimerBar component
+// ---------------------------------------------------------------------------
+
+function TimerBar({ progress }: { progress: SharedValue<number> }) {
+  const barStyle = useAnimatedStyle(() => {
+    const p = progress.value; // 0 = full, 1 = empty
+
+    // Color interpolation: green → yellow (at ~60%) → red (at ~80%)
+    let color: string;
+    if (p < 0.6) {
+      color = interpolateColor(p / 0.6, [0, 1], [COLORS.timerGreen, COLORS.timerYellow]);
+    } else {
+      color = interpolateColor((p - 0.6) / 0.4, [0, 1], [COLORS.timerYellow, COLORS.timerRed]);
+    }
+
+    return {
+      width: `${(1 - p) * 100}%`,
+      backgroundColor: color,
+    };
+  });
+
+  return (
+    <View style={timerStyles.track}>
+      <Animated.View style={[timerStyles.bar, barStyle]} />
+    </View>
+  );
+}
+
+const timerStyles = StyleSheet.create({
+  track: {
+    height: 4,
+    backgroundColor: '#1E1E2E',
+    width: '100%',
+  },
+  bar: {
+    height: 4,
+    borderRadius: 2,
+  },
+});
+
+// ---------------------------------------------------------------------------
+// PulsingTimerBar — wraps TimerBar with a pulsing opacity when < 5s remain
+// ---------------------------------------------------------------------------
+
+function PulsingTimerBar({
+  progress,
+  timeLimitMs,
+}: {
+  progress: SharedValue<number>;
+  timeLimitMs: number;
+}) {
+  const pulseOpacity = useSharedValue(1);
+  // 1 = bar fully depleted, so threshold = fraction consumed when 5s remain
+  const pulseThreshold = timeLimitMs > 0 ? 1 - 5000 / timeLimitMs : 0;
+  // Track whether we've started pulsing so we don't reset it every frame
+  const isPulsing = useSharedValue(false);
+
+  const wrapStyle = useAnimatedStyle(() => {
+    if (progress.value >= pulseThreshold && !isPulsing.value) {
+      isPulsing.value = true;
+      pulseOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.35, { duration: 280, easing: Easing.inOut(Easing.ease) }),
+          withTiming(1, { duration: 280, easing: Easing.inOut(Easing.ease) }),
+        ),
+        -1,
+        false,
+      );
+    }
+    return { opacity: pulseOpacity.value };
+  });
+
+  return (
+    <Animated.View style={wrapStyle}>
+      <TimerBar progress={progress} />
+    </Animated.View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AnswerButton
+// ---------------------------------------------------------------------------
+
+interface AnswerButtonProps {
+  label: (typeof OPTION_LABELS)[number];
+  text: string;
+  state: 'default' | 'selected' | 'correct' | 'wrong' | 'dimmed';
+  onPress: () => void;
+}
+
+function AnswerButton({ label, text, state, onPress }: AnswerButtonProps) {
+  const scale = useSharedValue(1);
+
+  const bgColor = {
+    default: COLORS.answerDefault,
+    selected: COLORS.answerSelected,
+    correct: COLORS.answerCorrect,
+    wrong: COLORS.answerWrong,
+    dimmed: COLORS.answerDefault,
+  }[state];
+
+  const borderColor = {
+    default: COLORS.answerDefaultBorder,
+    selected: COLORS.answerSelectedBorder,
+    correct: COLORS.answerCorrectBorder,
+    wrong: COLORS.answerWrongBorder,
+    dimmed: COLORS.answerDefaultBorder,
+  }[state];
+
+  const labelColor = {
+    default: COLORS.muted,
+    selected: '#6B80FF',
+    correct: '#22C55E',
+    wrong: '#EF4444',
+    dimmed: '#2E2E4A',
+  }[state];
+
+  const textColor = state === 'dimmed' ? '#2E2E4A' : COLORS.offWhite;
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  function handlePress() {
+    if (state !== 'default') return;
+    // Spring bounce on tap
+    scale.value = withSequence(
+      withSpring(0.94, { damping: 10, stiffness: 400 }),
+      withSpring(1, { damping: 12, stiffness: 300 }),
+    );
+    onPress();
+  }
+
+  // Correct answer: celebratory pulse (scale bounce)
+  useEffect(() => {
+    if (state === 'correct') {
+      scale.value = withSequence(
+        withSpring(1.06, { damping: 8, stiffness: 500 }),
+        withSpring(1.03, { damping: 10, stiffness: 300 }),
+        withSpring(1, { damping: 12, stiffness: 200 }),
+      );
+    }
+  }, [state, scale]);
+
+  const shakeX = useSharedValue(0);
+  const shakeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shakeX.value }, { scale: scale.value }],
+  }));
+
+  useEffect(() => {
+    if (state === 'wrong') {
+      shakeX.value = withSequence(
+        withTiming(-8, { duration: 60 }),
+        withTiming(8, { duration: 60 }),
+        withTiming(-6, { duration: 60 }),
+        withTiming(6, { duration: 60 }),
+        withTiming(-3, { duration: 60 }),
+        withTiming(0, { duration: 60 }),
+      );
+    }
+  }, [state, shakeX]);
+
+  return (
+    <Pressable
+      onPress={handlePress}
+      disabled={state !== 'default'}
+      accessibilityRole="button"
+      accessibilityLabel={`Option ${label}: ${text}`}
+      style={styles.answerPressable}
+    >
+      <Animated.View
+        style={[
+          styles.answerButton,
+          { backgroundColor: bgColor, borderColor },
+          state === 'wrong' ? shakeStyle : animatedStyle,
+        ]}
+      >
+        <View style={[styles.answerLabel, { borderColor: labelColor }]}>
+          <Text style={[styles.answerLabelText, { color: labelColor }]}>{label}</Text>
+        </View>
+        <Text style={[styles.answerText, { color: textColor }]} numberOfLines={3}>
+          {text}
+        </Text>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// QuestionCard — slides in from right on each new question
+// ---------------------------------------------------------------------------
+
+interface QuestionCardProps {
+  question: string;
+  questionIndex: number;
+  totalQuestions: number;
+}
+
+function QuestionCard({ question, questionIndex, totalQuestions }: QuestionCardProps) {
+  const translateX = useSharedValue(SCREEN_W);
+
+  useEffect(() => {
+    translateX.value = SCREEN_W;
+    translateX.value = withSpring(0, { damping: 22, stiffness: 200, mass: 0.8 });
+  }, [questionIndex, translateX]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  return (
+    <Animated.View style={[styles.questionCard, animStyle]}>
+      <Text style={styles.questionNumber}>
+        Q {questionIndex + 1}/{totalQuestions}
+      </Text>
+      <Text style={styles.questionText}>{question}</Text>
+    </Animated.View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Results screen (inline)
+// ---------------------------------------------------------------------------
+
+interface ResultsViewProps {
+  score: number;
+  total: number;
+  coinsEarned: number;
+  onPlayAgain: () => void;
+  onBack: () => void;
+}
+
+function ResultsView({ score, total, coinsEarned, onPlayAgain, onBack }: ResultsViewProps) {
+  const scale = useSharedValue(0.8);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    scale.value = withSpring(1, { damping: 18, stiffness: 250 });
+    opacity.value = withTiming(1, { duration: 400 });
+  }, [opacity, scale]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
+  const isPerfect = score === total;
+  const isGood = percentage >= 60;
+
+  const emoji = isPerfect ? '🏆' : isGood ? '🎯' : '💀';
+  const headline = isPerfect ? 'FLAWLESS' : isGood ? 'NICE WORK' : 'BETTER LUCK NEXT TIME';
+
+  return (
+    <Animated.View style={[styles.resultsContainer, animStyle]}>
+      <Text style={styles.resultsEmoji}>{emoji}</Text>
+      <Text style={styles.resultsHeadline}>{headline}</Text>
+
+      <View style={styles.resultsScoreRow}>
+        <View style={styles.resultsScoreBlock}>
+          <Text style={styles.resultsScoreValue}>{score}/{total}</Text>
+          <Text style={styles.resultsScoreLabel}>CORRECT</Text>
+        </View>
+        <View style={styles.resultsDivider} />
+        <View style={styles.resultsScoreBlock}>
+          <Text style={[styles.resultsScoreValue, { color: COLORS.gold }]}>
+            ◈ {coinsEarned.toLocaleString()}
+          </Text>
+          <Text style={styles.resultsScoreLabel}>COINS EARNED</Text>
+        </View>
+      </View>
+
+      <Pressable style={styles.playAgainButton} onPress={onPlayAgain} accessibilityRole="button">
+        <Text style={styles.playAgainText}>PLAY AGAIN</Text>
+      </Pressable>
+
+      <Pressable style={styles.backButton} onPress={onBack} accessibilityRole="button">
+        <Text style={styles.backButtonText}>Back to Feed</Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main screen
+// ---------------------------------------------------------------------------
+
+export default function TriviaGameScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{
+    mode?: string;
+    questionIds?: string;
+    count?: string;
+  }>();
+
+  const mode = (params.mode ?? 'practice') as GameMode;
+  const presetIds = params.questionIds ? params.questionIds.split(',') : undefined;
+  const questionCount = params.count ? parseInt(params.count, 10) : DEFAULT_QUESTION_COUNT;
+
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const userCoins = useAuthStore((s) => s.user?.coinBalance ?? 0);
+
+  const [state, dispatch] = useReducer(gameReducer, undefined, initialState);
+  const timer = useGameTimer();
+
+  // Track the active question's time limit for the pulse threshold
+  const currentTimeLimitMs =
+    state.questions[state.currentIndex]?.timeLimitMs ?? DEFAULT_TIME_LIMIT_MS;
+
+  // -------------------------------------------------------------------------
+  // Load questions on mount
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    void loadQuestions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function loadQuestions() {
+    dispatch({ type: 'LOADING_START' });
+    try {
+      const questions = await getRandomTriviaQuestions(
+        questionCount,
+        presetIds,
+        accessToken ?? undefined,
+      );
+      dispatch({ type: 'QUESTIONS_LOADED', questions });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load questions';
+      dispatch({ type: 'LOADING_ERROR', message });
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Start timer when a new question becomes active
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (state.phase !== 'question_active') return;
+
+    const q = state.questions[state.currentIndex];
+    if (!q) return;
+
+    const timeLimitMs = q.timeLimitMs ?? DEFAULT_TIME_LIMIT_MS;
+
+    timer.start(timeLimitMs, () => {
+      dispatch({ type: 'TIMEOUT' });
+    });
+
+    return () => timer.cancel();
+    // We intentionally depend on currentIndex to restart the timer per question
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.phase, state.currentIndex]);
+
+  // -------------------------------------------------------------------------
+  // When answer_selected (including timeout), submit to server
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (state.phase !== 'answer_selected') return;
+
+    timer.cancel();
+
+    const q = state.questions[state.currentIndex];
+    if (!q) return;
+
+    const clientTimestamp = Date.now();
+    const selectedId = state.selectedOptionId ?? '__timeout__';
+
+    // Fire validate — if the server is unreachable, synthesize a wrong result
+    // so the game can continue (optimistic degradation)
+    async function submitAnswer() {
+      try {
+        const result = await validateTriviaAnswer(
+          q.id,
+          selectedId,
+          clientTimestamp,
+          accessToken ?? undefined,
+        );
+        dispatch({ type: 'RESULT_RECEIVED', result });
+      } catch {
+        // Offline / error fallback — treat as wrong, no coins
+        const fallback: TriviaAnswerResult = {
+          questionId: q.id,
+          isCorrect: false,
+          correctOptionId: '__unknown__',
+          coinsAwarded: 0,
+          serverTimestamp: Date.now(),
+        };
+        dispatch({ type: 'RESULT_RECEIVED', result: fallback });
+      }
+    }
+
+    void submitAnswer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.phase]);
+
+  // -------------------------------------------------------------------------
+  // Auto-advance after showing result
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (state.phase !== 'showing_result') return;
+
+    const timeout = setTimeout(() => {
+      dispatch({ type: 'ADVANCE' });
+    }, ADVANCE_DELAY_MS);
+
+    return () => clearTimeout(timeout);
+  }, [state.phase]);
+
+  // -------------------------------------------------------------------------
+  // Answer press handler
+  // -------------------------------------------------------------------------
+
+  function handleAnswer(optionId: string) {
+    dispatch({ type: 'ANSWER_SELECTED', optionId });
+  }
+
+  function handlePlayAgain() {
+    void loadQuestions();
+  }
+
+  function handleBack() {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Derive per-button states
+  // -------------------------------------------------------------------------
+
+  function getButtonState(optionId: string): AnswerButtonProps['state'] {
+    const { phase, selectedOptionId, lastResult } = state;
+
+    if (phase === 'question_active') return 'default';
+
+    if (phase === 'answer_selected') {
+      return optionId === selectedOptionId ? 'selected' : 'dimmed';
+    }
+
+    if (phase === 'showing_result' && lastResult) {
+      if (optionId === lastResult.correctOptionId) return 'correct';
+      if (optionId === selectedOptionId && !lastResult.isCorrect) return 'wrong';
+      return 'dimmed';
+    }
+
+    return 'default';
+  }
+
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
+
+  const currentQuestion = state.questions[state.currentIndex];
+
+  // Loading state
+  if (state.phase === 'loading' || state.phase === 'idle') {
+    return (
+      <View style={styles.loadingContainer}>
+        {state.phase === 'loading' ? (
+          <>
+            <ActivityIndicator color={COLORS.accent} size="large" />
+            <Text style={styles.loadingText}>Loading questions…</Text>
+          </>
+        ) : state.errorMessage ? (
+          <>
+            <Text style={styles.errorText}>{state.errorMessage}</Text>
+            <Pressable style={styles.playAgainButton} onPress={handleBack}>
+              <Text style={styles.playAgainText}>GO BACK</Text>
+            </Pressable>
+          </>
+        ) : null}
+      </View>
+    );
+  }
+
+  // Finished state
+  if (state.phase === 'finished') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <ResultsView
+          score={state.score}
+          total={state.questions.length}
+          coinsEarned={state.coinsEarned}
+          onPlayAgain={handlePlayAgain}
+          onBack={handleBack}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  if (!currentQuestion) return null;
+
+  const isInteractable = state.phase === 'question_active';
+  const liveCoins = userCoins + state.coinsEarned;
+
+  return (
+    <View style={styles.container}>
+      {/* Timer bar — sits at absolute top, above safe area */}
+      <PulsingTimerBar progress={timer.progress} timeLimitMs={currentTimeLimitMs} />
+
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        {/* Top bar */}
+        <View style={styles.topBar}>
+          <View style={styles.timerDisplay}>
+            <TimerDigit
+              progress={timer.progress}
+              timeLimitMs={currentTimeLimitMs}
+              questionIndex={state.currentIndex}
+            />
+          </View>
+
+          <View style={styles.topBarCenter}>
+            <Text style={styles.questionCounter}>
+              Q {state.currentIndex + 1}/{state.questions.length}
+            </Text>
+          </View>
+
+          <View style={styles.coinDisplay}>
+            <Text style={styles.coinIcon}>◈</Text>
+            <Text style={styles.coinBalance}>{liveCoins.toLocaleString()}</Text>
+          </View>
+        </View>
+
+        {/* Question area */}
+        <View style={styles.questionArea}>
+          {currentQuestion && (
+            <QuestionCard
+              question={currentQuestion.question}
+              questionIndex={state.currentIndex}
+              totalQuestions={state.questions.length}
+            />
+          )}
+        </View>
+
+        {/* Answer grid */}
+        <View style={styles.answersGrid}>
+          {currentQuestion.options.map((option, i) => (
+            <AnswerButton
+              key={option.id}
+              label={OPTION_LABELS[i]}
+              text={option.text}
+              state={getButtonState(option.id)}
+              onPress={() => {
+                if (isInteractable) handleAnswer(option.id);
+              }}
+            />
+          ))}
+        </View>
+      </SafeAreaView>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TimerDigit — shows remaining seconds, derived from progress shared value
+// ---------------------------------------------------------------------------
+
+function TimerDigit({
+  timeLimitMs,
+  questionIndex,
+}: {
+  progress: SharedValue<number>;
+  timeLimitMs: number;
+  questionIndex: number;
+}) {
+  // We can't read sharedValue in JS except via useAnimatedStyle / derived values.
+  // For the digit display, we run a separate rAF loop to update a regular state.
+  // This is fine — it's just a display, not the timer logic itself.
+  const [seconds, setSeconds] = useState(Math.ceil(timeLimitMs / 1000));
+
+  const startRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    startRef.current = Date.now();
+    setSeconds(Math.ceil(timeLimitMs / 1000));
+
+    let raf: ReturnType<typeof requestAnimationFrame>;
+
+    function tick() {
+      if (startRef.current == null) return;
+      const elapsed = Date.now() - startRef.current;
+      const remaining = Math.max(0, timeLimitMs - elapsed);
+      setSeconds(Math.ceil(remaining / 1000));
+      if (remaining > 0) {
+        raf = requestAnimationFrame(tick);
+      }
+    }
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  // questionIndex ensures reset even when timeLimitMs is identical across questions
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeLimitMs, questionIndex]);
+
+  const isLow = seconds <= 5;
+
+  return (
+    <Text style={[styles.timerSeconds, isLow && styles.timerSecondsLow]}>
+      {seconds}
+    </Text>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+  },
+  safeArea: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    color: COLORS.muted,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 15,
+    textAlign: 'center',
+    paddingHorizontal: 32,
+  },
+
+  // Top bar
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  timerDisplay: {
+    width: 56,
+    alignItems: 'flex-start',
+  },
+  timerSeconds: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: COLORS.white,
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -1,
+  },
+  timerSecondsLow: {
+    color: COLORS.timerRed,
+  },
+  topBarCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  questionCounter: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.muted,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+  coinDisplay: {
+    width: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+  },
+  coinIcon: {
+    fontSize: 12,
+    color: COLORS.gold,
+  },
+  coinBalance: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.gold,
+    fontVariant: ['tabular-nums'],
+  },
+
+  // Question area
+  questionArea: {
+    flex: 1,
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  questionCard: {
+    gap: 12,
+  },
+  questionNumber: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.accent,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+  },
+  questionText: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: COLORS.white,
+    lineHeight: 34,
+    letterSpacing: -0.3,
+  },
+
+  // Answer grid
+  answersGrid: {
+    paddingHorizontal: 12,
+    paddingBottom: 16,
+    gap: 10,
+  },
+  answerPressable: {
+    width: '100%',
+  },
+  answerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    gap: 14,
+    minHeight: 64,
+  },
+  answerLabel: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  answerLabelText: {
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  answerText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    lineHeight: 21,
+  },
+
+  // Results
+  resultsContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    gap: 24,
+  },
+  resultsEmoji: {
+    fontSize: 72,
+  },
+  resultsHeadline: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: COLORS.white,
+    letterSpacing: 2,
+    textAlign: 'center',
+  },
+  resultsScoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceHigh,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 24,
+    gap: 24,
+    width: '100%',
+  },
+  resultsScoreBlock: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 6,
+  },
+  resultsDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: COLORS.border,
+  },
+  resultsScoreValue: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: COLORS.white,
+    letterSpacing: -1,
+  },
+  resultsScoreLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.muted,
+    letterSpacing: 2,
+  },
+  playAgainButton: {
+    backgroundColor: COLORS.accent,
+    borderRadius: 14,
+    paddingVertical: 18,
+    paddingHorizontal: 40,
+    width: '100%',
+    alignItems: 'center',
+  },
+  playAgainText: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: COLORS.white,
+    letterSpacing: 2,
+  },
+  backButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  backButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.muted,
+  },
+});

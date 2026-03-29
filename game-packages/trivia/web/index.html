@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Trivia</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    :root {
+      --bg: #0D0D1A;
+      --card: #1A1A2E;
+      --border: #2A2A4A;
+      --accent: #7C3AED;
+      --accent-glow: rgba(124,58,237,0.25);
+      --text: #FFFFFF;
+      --muted: #9CA3AF;
+      --success: #10B981;
+      --danger: #EF4444;
+      --option-a: #7C3AED;
+      --option-b: #2563EB;
+      --option-c: #D97706;
+      --option-d: #DC2626;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    #root {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 12px 14px;
+      gap: 10px;
+    }
+
+    /* Timer bar */
+    #timer-bar-track {
+      width: 100%;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    #timer-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), #A855F7);
+      border-radius: 2px;
+      transform-origin: left;
+      transition: transform 0.1s linear, background 0.3s;
+    }
+
+    #timer-bar.urgent {
+      background: linear-gradient(90deg, var(--danger), #F97316);
+    }
+
+    /* Timer text */
+    #timer-text {
+      text-align: right;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      flex-shrink: 0;
+      margin-top: -8px;
+    }
+
+    #timer-text.urgent { color: var(--danger); }
+
+    /* Question card */
+    #question-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      flex-shrink: 0;
+    }
+
+    #question-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    #question-text {
+      font-size: 17px;
+      font-weight: 600;
+      line-height: 1.45;
+      color: var(--text);
+    }
+
+    /* Options grid */
+    #options-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      flex: 1;
+    }
+
+    .option-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1.5px solid var(--border);
+      background: var(--card);
+      cursor: pointer;
+      transition: transform 0.1s, border-color 0.2s, background 0.2s;
+      text-align: left;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .option-btn:active { transform: scale(0.97); }
+
+    .option-btn .label {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .option-btn[data-idx="0"] .label { background: rgba(124,58,237,0.2); color: #A78BFA; }
+    .option-btn[data-idx="1"] .label { background: rgba(37,99,235,0.2);  color: #60A5FA; }
+    .option-btn[data-idx="2"] .label { background: rgba(217,119,6,0.2);  color: #FCD34D; }
+    .option-btn[data-idx="3"] .label { background: rgba(220,38,38,0.2);  color: #FCA5A5; }
+
+    .option-btn .text {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    /* Selected state */
+    .option-btn.selected {
+      border-color: var(--accent);
+      background: var(--accent-glow);
+    }
+
+    .option-btn.selected .label {
+      background: var(--accent) !important;
+      color: #fff !important;
+    }
+
+    /* Locked state */
+    .option-btn.locked {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .option-btn.locked:not(.selected) { opacity: 0.4; }
+
+    /* Submitted banner */
+    #submitted-banner {
+      display: none;
+      background: rgba(16,185,129,0.15);
+      border: 1px solid var(--success);
+      border-radius: 10px;
+      padding: 10px 16px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--success);
+      flex-shrink: 0;
+    }
+
+    #submitted-banner.visible { display: block; }
+  </style>
+</head>
+<body>
+<div id="root">
+  <div id="timer-bar-track"><div id="timer-bar"></div></div>
+  <div id="timer-text">--</div>
+  <div id="question-card">
+    <div id="question-label">Question</div>
+    <div id="question-text">Loading…</div>
+  </div>
+  <div id="options-grid"></div>
+  <div id="submitted-banner">Answer submitted ✓</div>
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let timeLimitMs = 30000;
+  let startTs = null;
+  let timerRaf = null;
+  let selectedIdx = null;
+  let locked = false;
+
+  const LABELS = ['A', 'B', 'C', 'D'];
+  const OPTION_COLORS = [
+    { bg: 'rgba(124,58,237,0.15)', border: '#7C3AED' },
+    { bg: 'rgba(37,99,235,0.15)',  border: '#2563EB' },
+    { bg: 'rgba(217,119,6,0.15)', border: '#D97706' },
+    { bg: 'rgba(220,38,38,0.15)', border: '#DC2626' },
+  ];
+
+  // ── DOM refs ───────────────────────────────────────────────────────────────
+  const $timerBar  = document.getElementById('timer-bar');
+  const $timerText = document.getElementById('timer-text');
+  const $question  = document.getElementById('question-text');
+  const $grid      = document.getElementById('options-grid');
+  const $banner    = document.getElementById('submitted-banner');
+
+  // ── Timer ──────────────────────────────────────────────────────────────────
+  function startTimer() {
+    startTs = Date.now();
+    function tick() {
+      const elapsed = Date.now() - startTs;
+      const remaining = Math.max(0, timeLimitMs - elapsed);
+      const pct = remaining / timeLimitMs;
+      const secs = Math.ceil(remaining / 1000);
+
+      $timerBar.style.transform = `scaleX(${pct})`;
+      $timerText.textContent = secs + 's';
+
+      const urgent = secs <= 5;
+      $timerBar.classList.toggle('urgent', urgent);
+      $timerText.classList.toggle('urgent', urgent);
+
+      if (remaining > 0 && !locked) {
+        timerRaf = requestAnimationFrame(tick);
+      }
+    }
+    timerRaf = requestAnimationFrame(tick);
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  function render(payload) {
+    const { question, options } = payload;
+
+    // Set question text (support plain text or { text } object)
+    const qText = typeof question === 'object' ? (question.text || '') : (question || '');
+    $question.textContent = qText;
+
+    // Build option buttons
+    $grid.innerHTML = '';
+    (options || []).slice(0, 4).forEach((opt, i) => {
+      const optText = typeof opt === 'object' ? (opt.text || '') : String(opt);
+      const btn = document.createElement('button');
+      btn.className = 'option-btn';
+      btn.dataset.idx = String(i);
+      btn.innerHTML = `
+        <span class="label">${LABELS[i]}</span>
+        <span class="text">${optText}</span>
+      `;
+      btn.addEventListener('click', () => selectOption(i));
+      $grid.appendChild(btn);
+    });
+  }
+
+  // ── Option selection ───────────────────────────────────────────────────────
+  function selectOption(idx) {
+    if (locked) return;
+    selectedIdx = idx;
+    locked = true;
+
+    // Update UI
+    document.querySelectorAll('.option-btn').forEach((btn) => {
+      const i = parseInt(btn.dataset.idx);
+      btn.classList.add('locked');
+      if (i === idx) btn.classList.add('selected');
+    });
+
+    $banner.classList.add('visible');
+    cancelAnimationFrame(timerRaf);
+
+    // Post answer to native shell
+    postToNative({
+      type: 'SUBMIT_ANSWER',
+      payload: {
+        gameType: 'trivia',
+        selectedOptionId: String(idx),
+      },
+    });
+  }
+
+  // ── Native bridge ──────────────────────────────────────────────────────────
+  function postToNative(msg) {
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify(msg));
+    } else {
+      // Development fallback
+      window.parent.postMessage(JSON.stringify(msg), '*');
+    }
+  }
+
+  function postReady() {
+    postToNative({ type: 'READY' });
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  function init(payload) {
+    if (!payload) return;
+    timeLimitMs = payload.timeLimitMs || 30000;
+    render(payload);
+    startTimer();
+    postReady();
+  }
+
+  // ── Message listener (from native via injectJavaScript) ───────────────────
+  window.addEventListener('message', function (event) {
+    let msg;
+    try {
+      msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+    } catch { return; }
+
+    if (msg.type === 'GAME_INIT' && msg.payload) {
+      init(msg.payload);
+    }
+  });
+
+  // ── Bootstrap: read pre-injected data if available ────────────────────────
+  if (window.__EUPHORIA_GAME__) {
+    init(window.__EUPHORIA_GAME__.payload
+      ? { ...window.__EUPHORIA_GAME__.payload, timeLimitMs: window.__EUPHORIA_GAME__.timeLimitMs }
+      : window.__EUPHORIA_GAME__);
+  }
+</script>
+</body>
+</html>

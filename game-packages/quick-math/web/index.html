@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Quick Math</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    :root {
+      --bg: #0D0D1A;
+      --card: #1A1A2E;
+      --border: #2A2A4A;
+      --accent: #7C3AED;
+      --text: #FFFFFF;
+      --muted: #9CA3AF;
+      --success: #10B981;
+      --danger: #EF4444;
+    }
+
+    html, body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif; height: 100%; overflow: hidden; }
+
+    #root { display: flex; flex-direction: column; height: 100vh; padding: 12px 14px; gap: 10px; }
+
+    #timer-bar-track { width: 100%; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
+    #timer-bar { height: 100%; background: linear-gradient(90deg, #7C3AED, #A855F7); border-radius: 2px; transform-origin: left; transition: transform 0.1s linear; }
+    #timer-bar.urgent { background: linear-gradient(90deg, var(--danger), #F97316); }
+    #timer-text { text-align: right; font-size: 13px; font-weight: 600; color: var(--muted); flex-shrink: 0; margin-top: -8px; }
+    #timer-text.urgent { color: var(--danger); }
+
+    #expression-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px 16px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #expression-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+    #expression-text { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; text-align: center; color: var(--text); font-variant-numeric: tabular-nums; }
+
+    #options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; flex: 1; }
+
+    .option-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 16px;
+      border-radius: 16px;
+      border: 1.5px solid var(--border);
+      background: var(--card);
+      cursor: pointer;
+      transition: transform 0.1s, border-color 0.2s, background 0.2s;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .option-btn:active { transform: scale(0.96); }
+
+    .option-btn .label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+    .option-btn .value { font-size: 26px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+
+    .option-btn[data-idx="0"] { border-color: rgba(124,58,237,0.4); }
+    .option-btn[data-idx="1"] { border-color: rgba(37,99,235,0.4); }
+    .option-btn[data-idx="2"] { border-color: rgba(217,119,6,0.4); }
+    .option-btn[data-idx="3"] { border-color: rgba(220,38,38,0.4); }
+
+    .option-btn[data-idx="0"] .label { color: #A78BFA; }
+    .option-btn[data-idx="1"] .label { color: #60A5FA; }
+    .option-btn[data-idx="2"] .label { color: #FCD34D; }
+    .option-btn[data-idx="3"] .label { color: #FCA5A5; }
+
+    .option-btn.selected { border-width: 2px; }
+    .option-btn[data-idx="0"].selected { border-color: #7C3AED; background: rgba(124,58,237,0.15); }
+    .option-btn[data-idx="1"].selected { border-color: #2563EB; background: rgba(37,99,235,0.15); }
+    .option-btn[data-idx="2"].selected { border-color: #D97706; background: rgba(217,119,6,0.15); }
+    .option-btn[data-idx="3"].selected { border-color: #DC2626; background: rgba(220,38,38,0.15); }
+
+    .option-btn.locked { opacity: 0.5; cursor: not-allowed; }
+    .option-btn.locked.selected { opacity: 1; }
+
+    #submitted-banner { display: none; background: rgba(16,185,129,0.15); border: 1px solid var(--success); border-radius: 10px; padding: 10px 16px; text-align: center; font-size: 13px; font-weight: 600; color: var(--success); flex-shrink: 0; }
+    #submitted-banner.visible { display: block; }
+  </style>
+</head>
+<body>
+<div id="root">
+  <div id="timer-bar-track"><div id="timer-bar"></div></div>
+  <div id="timer-text">--</div>
+  <div id="expression-card">
+    <div id="expression-label">Solve</div>
+    <div id="expression-text">…</div>
+  </div>
+  <div id="options-grid"></div>
+  <div id="submitted-banner">Answer submitted ✓</div>
+</div>
+<script>
+  let timeLimitMs = 30000, startTs = null, timerRaf = null, locked = false;
+  const LABELS = ['A','B','C','D'];
+
+  const $timerBar  = document.getElementById('timer-bar');
+  const $timerText = document.getElementById('timer-text');
+  const $expr      = document.getElementById('expression-text');
+  const $grid      = document.getElementById('options-grid');
+  const $banner    = document.getElementById('submitted-banner');
+
+  function startTimer() {
+    startTs = Date.now();
+    (function tick() {
+      const remaining = Math.max(0, timeLimitMs - (Date.now() - startTs));
+      const secs = Math.ceil(remaining / 1000);
+      $timerBar.style.transform = `scaleX(${remaining / timeLimitMs})`;
+      $timerText.textContent = secs + 's';
+      const urgent = secs <= 5;
+      $timerBar.classList.toggle('urgent', urgent);
+      $timerText.classList.toggle('urgent', urgent);
+      if (remaining > 0 && !locked) timerRaf = requestAnimationFrame(tick);
+    })();
+  }
+
+  function render(payload) {
+    $expr.textContent = payload.expression || '?';
+    $grid.innerHTML = '';
+    (payload.options || []).slice(0, 4).forEach((opt, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'option-btn';
+      btn.dataset.idx = String(i);
+      btn.innerHTML = `<span class="label">${LABELS[i]}</span><span class="value">${opt}</span>`;
+      btn.addEventListener('click', () => select(i));
+      $grid.appendChild(btn);
+    });
+  }
+
+  function select(idx) {
+    if (locked) return;
+    locked = true;
+    cancelAnimationFrame(timerRaf);
+    document.querySelectorAll('.option-btn').forEach(btn => {
+      btn.classList.add('locked');
+      if (parseInt(btn.dataset.idx) === idx) btn.classList.add('selected');
+    });
+    $banner.classList.add('visible');
+    postToNative({ type: 'SUBMIT_ANSWER', payload: { gameType: 'quick_math', selectedOptionId: String(idx) } });
+  }
+
+  function postToNative(msg) {
+    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(msg));
+    else window.parent.postMessage(JSON.stringify(msg), '*');
+  }
+
+  function init(payload) {
+    if (!payload) return;
+    timeLimitMs = payload.timeLimitMs || 30000;
+    render(payload);
+    startTimer();
+    postToNative({ type: 'READY' });
+  }
+
+  window.addEventListener('message', function(e) {
+    try {
+      const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      if (msg.type === 'GAME_INIT' && msg.payload) init(msg.payload);
+    } catch {}
+  });
+
+  if (window.__EUPHORIA_GAME__) {
+    const g = window.__EUPHORIA_GAME__;
+    init(g.payload ? { ...g.payload, timeLimitMs: g.timeLimitMs } : g);
+  }
+</script>
+</body>
+</html>

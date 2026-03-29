@@ -1,0 +1,59 @@
+version: '3.9'
+
+# Local development dependencies only.
+# The NestJS app itself runs via `npm run dev` outside Docker.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: euphoria-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: euphoria
+      POSTGRES_PASSWORD: euphoria
+      POSTGRES_DB: euphoria_dev
+    ports:
+      - '5433:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U euphoria -d euphoria_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: euphoria-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Optional: Redis Commander UI for local debugging
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: euphoria-redis-ui
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - '8081:8081'
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles:
+      - debug
+
+volumes:
+  postgres_data:

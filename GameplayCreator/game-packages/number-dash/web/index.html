@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>Number Dash</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0D0D1A;
+    font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+    user-select: none;
+  }
+
+  #root {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+  }
+
+  /* ── Header ── */
+  #hud {
+    position: relative; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px 8px;
+    background: rgba(13, 13, 26, 0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(168, 85, 247, 0.15);
+    flex-shrink: 0;
+  }
+
+  .hud-box {
+    display: flex; flex-direction: column; align-items: center;
+    min-width: 90px;
+  }
+
+  .hud-label {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: rgba(255,255,255,0.4);
+    margin-bottom: 2px;
+  }
+
+  #next-number-display {
+    font-size: 26px; font-weight: 900; line-height: 1;
+    color: #C084FC;
+    text-shadow: 0 0 12px #A855F7, 0 0 24px rgba(168,85,247,0.5);
+    animation: hudPulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes hudPulse {
+    0%, 100% { text-shadow: 0 0 12px #A855F7, 0 0 24px rgba(168,85,247,0.5); }
+    50%       { text-shadow: 0 0 20px #C084FC, 0 0 40px rgba(192,132,252,0.7), 0 0 60px rgba(168,85,247,0.3); }
+  }
+
+  @keyframes hudPulseGold {
+    0%, 100% { text-shadow: 0 0 12px #F59E0B, 0 0 24px rgba(245,158,11,0.5); }
+    50%       { text-shadow: 0 0 20px #FBBF24, 0 0 40px rgba(251,191,36,0.8), 0 0 60px rgba(245,158,11,0.4); }
+  }
+
+  #hud-title {
+    font-size: 13px; font-weight: 900; letter-spacing: 0.2em;
+    text-transform: uppercase;
+    background: linear-gradient(135deg, #A855F7, #C084FC, #818CF8);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  #score-display {
+    font-size: 22px; font-weight: 900; line-height: 1;
+    color: #10B981;
+    text-shadow: 0 0 10px rgba(16,185,129,0.6);
+  }
+
+  #cutoff-display {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+    color: rgba(251, 113, 133, 0.75);
+    margin-top: 1px;
+  }
+
+  #score-display.danger {
+    color: #F87171;
+    text-shadow: 0 0 10px rgba(248, 113, 113, 0.7);
+  }
+
+  /* ── Timer bar ── */
+  #timer-track {
+    height: 3px; width: 100%;
+    background: rgba(255,255,255,0.07);
+    flex-shrink: 0; position: relative; z-index: 10;
+  }
+
+  #timer-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #A855F7, #C084FC);
+    width: 100%;
+    transition: background 0.4s ease;
+    transform-origin: left center;
+  }
+
+  #timer-fill.urgent {
+    background: linear-gradient(90deg, #EF4444, #F97316);
+  }
+
+  /* ── Canvas ── */
+  #canvas {
+    flex: 1; display: block;
+    touch-action: none;
+  }
+
+  /* ── Overlay screens ── */
+  .screen {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(13, 13, 26, 0.88);
+    backdrop-filter: blur(4px);
+  }
+
+  .screen.hidden { display: none; }
+
+  /* Ready screen */
+  #ready-screen .game-title {
+    font-size: clamp(32px, 8vw, 48px);
+    font-weight: 900; letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: #C084FC;
+    text-shadow: 0 0 20px #A855F7, 0 0 50px rgba(168,85,247,0.4);
+    margin-bottom: 16px;
+  }
+
+  #ready-screen .subtitle {
+    font-size: clamp(13px, 3.5vw, 16px);
+    color: rgba(255,255,255,0.6);
+    text-align: center;
+    max-width: 280px;
+    line-height: 1.5;
+    margin-bottom: 48px;
+  }
+
+  #ready-screen .subtitle span {
+    color: #C084FC; font-weight: 700;
+  }
+
+  #countdown-display {
+    font-size: clamp(72px, 20vw, 100px);
+    font-weight: 900; line-height: 1;
+    transform: scale(0);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  #countdown-display.show { transform: scale(1); }
+
+  #countdown-display.go {
+    color: #10B981;
+    text-shadow: 0 0 30px rgba(16,185,129,0.8), 0 0 60px rgba(16,185,129,0.4);
+  }
+
+  #countdown-display.num {
+    color: #C084FC;
+    text-shadow: 0 0 30px rgba(168,85,247,0.8), 0 0 60px rgba(168,85,247,0.4);
+  }
+
+  /* End screen */
+  #end-screen .end-title {
+    font-size: clamp(28px, 7vw, 42px);
+    font-weight: 900; letter-spacing: 0.1em;
+    color: #F59E0B;
+    text-shadow: 0 0 20px rgba(245,158,11,0.7);
+    margin-bottom: 12px;
+  }
+
+  #end-screen .stars {
+    font-size: clamp(32px, 9vw, 48px);
+    margin-bottom: 16px;
+    letter-spacing: 4px;
+  }
+
+  #end-screen .final-score {
+    font-size: clamp(56px, 14vw, 80px);
+    font-weight: 900; line-height: 1;
+    color: #F59E0B;
+    text-shadow: 0 0 30px rgba(245,158,11,0.8), 0 0 60px rgba(245,158,11,0.3);
+    margin-bottom: 8px;
+  }
+
+  #end-screen .score-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.15em;
+    text-transform: uppercase; color: rgba(255,255,255,0.4);
+    margin-bottom: 20px;
+  }
+
+  #end-screen .reached {
+    font-size: clamp(14px, 4vw, 18px);
+    font-weight: 600; color: #A855F7;
+  }
+
+  #end-screen .primes-hit {
+    font-size: clamp(13px, 3.5vw, 16px);
+    font-weight: 700; color: #F59E0B;
+    margin-top: 6px;
+    text-shadow: 0 0 10px rgba(245,158,11,0.5);
+  }
+</style>
+</head>
+<body>
+<div id="root">
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hud-box">
+      <div class="hud-label">Tap Next</div>
+      <div id="next-number-display">1</div>
+    </div>
+    <div id="hud-title">Number Dash</div>
+    <div class="hud-box" style="align-items:flex-end">
+      <div class="hud-label">Score</div>
+      <div id="score-display">0</div>
+      <div id="cutoff-display">cut: —</div>
+    </div>
+  </div>
+
+  <!-- Timer bar -->
+  <div id="timer-track">
+    <div id="timer-fill"></div>
+  </div>
+
+  <!-- Game canvas -->
+  <canvas id="canvas"></canvas>
+</div>
+
+<!-- Ready screen -->
+<div id="ready-screen" class="screen">
+  <div class="game-title">Number Dash</div>
+  <div class="subtitle">Numbers fall from the sky.<br>Tap them <span>IN ORDER</span> — 1, 2, 3...</div>
+  <div id="countdown-display" class="num">3</div>
+</div>
+
+<!-- End screen -->
+<div id="end-screen" class="screen hidden">
+  <div class="end-title">TIME'S UP!</div>
+  <div id="end-stars" class="stars">⭐</div>
+  <div id="final-score" class="final-score">0</div>
+  <div class="score-label">Points</div>
+  <div id="end-reached" class="reached">Reached 0 / 15</div>
+  <div id="end-primes" class="primes-hit">★ Primes hit: 0</div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ─────────────────────────────────────────────
+  // Config / constants
+  // ─────────────────────────────────────────────
+  const DIFFICULTY_PRESETS = {
+    easy:   { baseVy: 1.0, spawnMs: 1400, maxOnScreen: 4 },
+    medium: { baseVy: 1.4, spawnMs: 1100, maxOnScreen: 5 },
+    hard:   { baseVy: 1.8, spawnMs: 800,  maxOnScreen: 6 },
+  };
+
+  const COLORS_CORRECT = ['#A855F7', '#C084FC', '#10B981', '#F59E0B', '#FFFFFF', '#818CF8'];
+  const COLORS_PRIME   = ['#F59E0B', '#FBBF24', '#FCD34D', '#F97316', '#FFFFFF', '#FDE68A'];
+  const RADIUS         = 30;
+  const HIT_RADIUS     = RADIUS + 12;
+  let GAME_DURATION  = 20; // seconds — overridden by GAME_INIT payload.timeLimitMs
+  const PTS_BASE       = 5;   // non-prime tap
+  const PTS_PRIME      = 20;  // prime tap
+
+  // ─────────────────────────────────────────────
+  // State
+  // ─────────────────────────────────────────────
+  let config = { difficulty: 'medium', maxNumber: 15 };
+  let gameState  = 'idle'; // idle | countdown | playing | ended
+  let score      = 0;
+  let currentTarget = 1;
+  let primesTapped  = 0;
+  let timeLeft   = GAME_DURATION;
+  let shakeX     = 0;
+  let shakeDecay = 0;
+  let flashAlpha = 0;
+  let flashColor = '#A855F7';
+  let fallers    = [];
+  let particles  = [];
+  let floatTexts = [];
+  let spawnTimer = 0;
+  let roundProgress = 0; // 0→1 over game duration
+  let raf        = null;
+  let prevTime   = null;
+
+  // ─────────────────────────────────────────────
+  // DOM refs
+  // ─────────────────────────────────────────────
+  const canvas        = document.getElementById('canvas');
+  const ctx           = canvas.getContext('2d');
+  const timerFill     = document.getElementById('timer-fill');
+  const nextNumEl     = document.getElementById('next-number-display');
+  const scoreEl       = document.getElementById('score-display');
+  const cutoffEl      = document.getElementById('cutoff-display');
+  const readyScreen   = document.getElementById('ready-screen');
+  const endScreen     = document.getElementById('end-screen');
+  const countdownEl   = document.getElementById('countdown-display');
+  const endStarsEl    = document.getElementById('end-stars');
+  const finalScoreEl  = document.getElementById('final-score');
+  const endReachedEl  = document.getElementById('end-reached');
+
+  // ─────────────────────────────────────────────
+  // Resize
+  // ─────────────────────────────────────────────
+  function resize() {
+    canvas.width  = canvas.offsetWidth  * window.devicePixelRatio;
+    canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  }
+
+  window.addEventListener('resize', resize);
+
+  function cw() { return canvas.offsetWidth;  }
+  function ch() { return canvas.offsetHeight; }
+
+  // ─────────────────────────────────────────────
+  // Native bridge
+  // ─────────────────────────────────────────────
+  function postToNative(msg) {
+    const str = JSON.stringify(msg);
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(str);
+    } else {
+      window.parent.postMessage(str, '*');
+    }
+  }
+
+  function init(payload) {
+    if (payload) {
+      if (payload.difficulty && DIFFICULTY_PRESETS[payload.difficulty]) {
+        config.difficulty = payload.difficulty;
+      }
+      if (typeof payload.maxNumber === 'number') {
+        config.maxNumber = Math.max(10, Math.min(20, payload.maxNumber));
+      }
+      if (typeof payload.timeLimitMs === 'number') {
+        GAME_DURATION = Math.max(10, Math.round(payload.timeLimitMs / 1000));
+      }
+      if (typeof payload.cutoffScore === 'number') {
+        config.cutoffScore = payload.cutoffScore;
+      }
+    }
+    startCountdown();
+  }
+
+  window.addEventListener('message', function (e) {
+    try {
+      const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      if (msg && msg.type === 'GAME_INIT') init(msg.payload);
+    } catch (_) {}
+  });
+
+  if (window.__EUPHORIA_GAME__) {
+    init(window.__EUPHORIA_GAME__);
+  }
+
+  // ─────────────────────────────────────────────
+  // Easing helpers
+  // ─────────────────────────────────────────────
+  function easeOutBack(t) {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+
+  function easeOutQuad(t) {
+    return 1 - (1 - t) * (1 - t);
+  }
+
+  // ─────────────────────────────────────────────
+  // Prime detection
+  // ─────────────────────────────────────────────
+  function isPrime(n) {
+    if (n < 2) return false;
+    if (n === 2) return true;
+    if (n % 2 === 0) return false;
+    for (let i = 3; i * i <= n; i += 2) {
+      if (n % i === 0) return false;
+    }
+    return true;
+  }
+
+  // ─────────────────────────────────────────────
+  // Countdown
+  // ─────────────────────────────────────────────
+  function startCountdown() {
+    gameState = 'countdown';
+    readyScreen.classList.remove('hidden');
+    endScreen.classList.add('hidden');
+
+    const steps = [
+      { text: '3', cls: 'num'  },
+      { text: '2', cls: 'num'  },
+      { text: '1', cls: 'num'  },
+      { text: 'GO!', cls: 'go' },
+    ];
+    let i = 0;
+
+    function showStep() {
+      if (i >= steps.length) {
+        readyScreen.classList.add('hidden');
+        startGame();
+        return;
+      }
+      const s = steps[i++];
+      countdownEl.textContent = s.text;
+      countdownEl.className = s.cls; // remove 'show' to retrigger
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          countdownEl.classList.add('show');
+        });
+      });
+      setTimeout(() => {
+        countdownEl.classList.remove('show');
+        setTimeout(showStep, 200);
+      }, 700);
+    }
+
+    showStep();
+  }
+
+  // ─────────────────────────────────────────────
+  // Game start / reset
+  // ─────────────────────────────────────────────
+  function startGame() {
+    const preset = DIFFICULTY_PRESETS[config.difficulty];
+
+    score         = 0;
+    currentTarget = 1;
+    primesTapped  = 0;
+    timeLeft      = GAME_DURATION;
+    shakeX        = 0;
+    shakeDecay    = 0;
+    flashAlpha    = 0;
+    fallers       = [];
+    particles     = [];
+    floatTexts    = [];
+    spawnTimer    = 0;
+    roundProgress = 0;
+    prevTime      = null;
+
+    updateHUD();
+    timerFill.classList.remove('urgent');
+
+    gameState = 'playing';
+    postToNative({ type: 'READY' });
+
+    if (raf) cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(loop);
+  }
+
+  // ─────────────────────────────────────────────
+  // Faller factory
+  // ─────────────────────────────────────────────
+  function makeFaller(num) {
+    const x = RADIUS + Math.random() * (cw() - RADIUS * 2);
+    return {
+      num,
+      prime: isPrime(num),
+      x,
+      y: -RADIUS,
+      vy: 0,   // set each frame from preset + progress
+      scale: 0,
+      spawnAge: 0,   // frames 0→15 for spawn anim
+      dying: false,
+      dyingAge: 0,
+      dead: false,
+    };
+  }
+
+  // ─────────────────────────────────────────────
+  // Particle factory
+  // ─────────────────────────────────────────────
+  function makeParticle(x, y, correct) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = correct ? 2 + Math.random() * 4 : 1.5 + Math.random() * 2.5;
+    const colors = correct
+      ? COLORS_CORRECT
+      : ['#EF4444', '#F97316', '#FCA5A5', '#FBBF24'];
+    return {
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - (correct ? 2 : 1),
+      life: 1,
+      decay: correct ? 0.018 + Math.random() * 0.012 : 0.025 + Math.random() * 0.015,
+      r: correct ? 3 + Math.random() * 4 : 2 + Math.random() * 3,
+      color: colors[Math.floor(Math.random() * colors.length)],
+    };
+  }
+
+  // ─────────────────────────────────────────────
+  // FloatText factory
+  // ─────────────────────────────────────────────
+  function makeFloatText(x, y, text, color) {
+    return { x, y, text, color, life: 1, decay: 0.022 };
+  }
+
+  // ─────────────────────────────────────────────
+  // Spawn logic
+  // ─────────────────────────────────────────────
+  function spawnFaller() {
+    const preset    = DIFFICULTY_PRESETS[config.difficulty];
+    const maxScreen = preset.maxOnScreen;
+
+    if (fallers.filter(f => !f.dead).length >= maxScreen) return;
+
+    const targetOnScreen = fallers.some(f => !f.dead && f.num === currentTarget);
+
+    // 55% chance to force-spawn target if missing
+    let numToSpawn;
+    if (!targetOnScreen && Math.random() < 0.55) {
+      numToSpawn = currentTarget;
+    } else {
+      // Pool: currentTarget to currentTarget+6, excluding already on screen
+      const onScreen = new Set(fallers.filter(f => !f.dead).map(f => f.num));
+      const pool = [];
+      for (let n = currentTarget; n <= Math.min(currentTarget + 6, config.maxNumber); n++) {
+        if (!onScreen.has(n)) pool.push(n);
+      }
+      if (pool.length === 0) return;
+      numToSpawn = pool[Math.floor(Math.random() * pool.length)];
+    }
+
+    fallers.push(makeFaller(numToSpawn));
+  }
+
+  // ─────────────────────────────────────────────
+  // HUD update
+  // ─────────────────────────────────────────────
+  function updateHUD() {
+    nextNumEl.textContent = currentTarget <= config.maxNumber ? currentTarget : '--';
+    scoreEl.textContent   = score;
+    // Danger colour when below cutoff
+    if (config.cutoffScore && score < config.cutoffScore) {
+      scoreEl.classList.add('danger');
+    } else {
+      scoreEl.classList.remove('danger');
+    }
+    // Cutoff line
+    if (config.cutoffScore) {
+      cutoffEl.textContent = 'cut: ' + config.cutoffScore;
+    }
+    // Gold if next target is prime, purple otherwise
+    if (currentTarget <= config.maxNumber && isPrime(currentTarget)) {
+      nextNumEl.style.color      = '#F59E0B';
+      nextNumEl.style.animation  = 'hudPulseGold 1.4s ease-in-out infinite';
+    } else {
+      nextNumEl.style.color      = '#C084FC';
+      nextNumEl.style.animation  = 'hudPulse 1.4s ease-in-out infinite';
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // End game
+  // ─────────────────────────────────────────────
+  function endGame() {
+    gameState = 'ended';
+    cancelAnimationFrame(raf);
+
+    const reached = currentTarget - 1;
+    const pct     = reached / config.maxNumber;
+    const stars   = pct >= 0.66 ? '⭐⭐⭐' : pct >= 0.33 ? '⭐⭐' : '⭐';
+
+    endStarsEl.textContent   = stars;
+    finalScoreEl.textContent = score;
+    endReachedEl.textContent = `Reached ${reached} / ${config.maxNumber}`;
+    document.getElementById('end-primes').textContent = `★ Primes hit: ${primesTapped}`;
+    endScreen.classList.remove('hidden');
+
+    postToNative({
+      type: 'SUBMIT_ANSWER',
+      payload: {
+        gameType: 'number_dash',
+        score,
+        selectedOptionId: String(score),
+        reached,
+        primesTapped,
+      }
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // Tap handling
+  // ─────────────────────────────────────────────
+  function handleTap(clientX, clientY) {
+    if (gameState !== 'playing') return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x    = clientX - rect.left;
+    const y    = clientY - rect.top;
+
+    // Check in reverse so topmost-rendered (last drawn) gets priority
+    for (let i = fallers.length - 1; i >= 0; i--) {
+      const f = fallers[i];
+      if (f.dead || f.dying) continue;
+
+      const dx = x - f.x;
+      const dy = y - f.y;
+      if (dx * dx + dy * dy <= HIT_RADIUS * HIT_RADIUS) {
+        if (f.num === currentTarget) {
+          onCorrect(f, x, y);
+        } else {
+          onWrong(f, x, y);
+        }
+        return;
+      }
+    }
+  }
+
+  function onCorrect(f, x, y) {
+    const prime = f.prime;
+    const pts   = prime ? PTS_PRIME : PTS_BASE;
+    score += pts;
+    if (prime) primesTapped++;
+    currentTarget++;
+
+    // Kill faller with death animation
+    f.dying    = true;
+    f.dyingAge = 0;
+
+    // Particles — more and gold for primes
+    const pCount = prime ? 30 : 16;
+    const pCorrect = !prime; // use COLORS_CORRECT for non-prime, override for prime below
+    for (let p = 0; p < pCount; p++) {
+      const part = makeParticle(f.x, f.y, true);
+      if (prime) part.color = COLORS_PRIME[Math.floor(Math.random() * COLORS_PRIME.length)];
+      particles.push(part);
+    }
+
+    // Float text
+    const label = prime ? `+${pts} PRIME!` : `+${pts}`;
+    const color = prime ? '#F59E0B' : '#10B981';
+    floatTexts.push(makeFloatText(f.x, f.y - 20, label, color));
+
+    // Screen flash — golden for prime, green for normal
+    flashColor = prime ? '#F59E0B' : '#10B981';
+    flashAlpha = prime ? 0.28 : 0.18;
+
+    if (navigator.vibrate) navigator.vibrate(prime ? [30, 20, 30] : 20);
+
+    updateHUD();
+
+    if (currentTarget > config.maxNumber) {
+      setTimeout(endGame, 600);
+      gameState = 'ending';
+    }
+  }
+
+  function onWrong(f, x, y) {
+    // Particles
+    for (let p = 0; p < 10; p++) particles.push(makeParticle(f.x, f.y, false));
+
+    // Float text
+    floatTexts.push(makeFloatText(f.x, f.y - 20, 'WRONG!', '#EF4444'));
+
+    // Screen flash + shake
+    flashColor = '#EF4444';
+    flashAlpha = 0.28;
+    shakeX     = 7;
+    shakeDecay = 0.75;
+  }
+
+  canvas.addEventListener('mousedown', function (e) {
+    handleTap(e.clientX, e.clientY);
+  });
+
+  canvas.addEventListener('touchstart', function (e) {
+    e.preventDefault();
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      handleTap(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+    }
+  }, { passive: false });
+
+  // ─────────────────────────────────────────────
+  // Main loop
+  // ─────────────────────────────────────────────
+  function loop(now) {
+    if (gameState !== 'playing' && gameState !== 'ending') return;
+
+    if (prevTime === null) prevTime = now;
+    const dt = Math.min((now - prevTime) / 1000, 0.05);
+    prevTime = now;
+
+    // ── Timer ──
+    if (gameState === 'playing') {
+      timeLeft -= dt;
+      if (timeLeft <= 0) {
+        timeLeft = 0;
+        endGame();
+        return;
+      }
+    }
+
+    roundProgress = 1 - timeLeft / GAME_DURATION; // 0→1
+
+    // ── Spawn ──
+    const preset      = DIFFICULTY_PRESETS[config.difficulty];
+    const spawnInterp = preset.spawnMs - (preset.spawnMs - 500) * roundProgress; // ms
+    spawnTimer += dt * 1000;
+    if (spawnTimer >= spawnInterp) {
+      spawnTimer = 0;
+      spawnFaller();
+    }
+
+    // ── Velocity this frame ──
+    const vyScale = 1 + 0.6 * roundProgress; // 1× → 1.6×
+
+    // ── Update fallers ──
+    for (const f of fallers) {
+      if (f.dead) continue;
+
+      if (f.dying) {
+        f.dyingAge++;
+        if (f.dyingAge >= 18) f.dead = true;
+        continue;
+      }
+
+      // Spawn scale animation (0→1 over 15 frames)
+      if (f.spawnAge < 15) {
+        f.spawnAge++;
+        f.scale = easeOutBack(f.spawnAge / 15);
+      } else {
+        f.scale = 1;
+      }
+
+      f.y += preset.baseVy * vyScale * 60 * dt;
+
+      // Off screen bottom
+      if (f.y - RADIUS > ch()) {
+        f.dead = true;
+        // Losing target means combo reset
+        if (f.num === currentTarget) combo = 0;
+      }
+    }
+
+    // Prune dead fallers
+    fallers = fallers.filter(f => !f.dead);
+
+    // ── Update particles ──
+    for (const p of particles) {
+      p.x   += p.vx * 60 * dt;
+      p.y   += p.vy * 60 * dt;
+      p.vy  += 0.12 * 60 * dt; // gravity
+      p.life -= p.decay * 60 * dt;
+    }
+    particles = particles.filter(p => p.life > 0);
+
+    // ── Update float texts ──
+    for (const t of floatTexts) {
+      t.y    -= 1.1 * 60 * dt;
+      t.life -= t.decay * 60 * dt;
+    }
+    floatTexts = floatTexts.filter(t => t.life > 0);
+
+    // ── Shake decay ──
+    shakeX *= Math.pow(shakeDecay, 60 * dt);
+    if (Math.abs(shakeX) < 0.1) shakeX = 0;
+
+    // ── Flash decay ──
+    flashAlpha -= 0.03 * 60 * dt;
+    if (flashAlpha < 0) flashAlpha = 0;
+
+    // ── Timer bar ──
+    const pct = timeLeft / GAME_DURATION;
+    timerFill.style.width = (pct * 100) + '%';
+    if (timeLeft < Math.min(8, GAME_DURATION * 0.35)) {
+      timerFill.classList.add('urgent');
+    }
+
+    // ── Draw ──
+    draw(now);
+
+    raf = requestAnimationFrame(loop);
+  }
+
+  // ─────────────────────────────────────────────
+  // Draw
+  // ─────────────────────────────────────────────
+  function draw(now) {
+    const W = cw(), H = ch();
+
+    // Clear
+    ctx.clearRect(0, 0, W, H);
+
+    // Background gradient
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, '#0D0D1A');
+    bg.addColorStop(1, '#0A0A14');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle grid lines
+    ctx.strokeStyle = 'rgba(168,85,247,0.04)';
+    ctx.lineWidth = 1;
+    for (let gx = 0; gx < W; gx += 60) {
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke();
+    }
+    for (let gy = 0; gy < H; gy += 60) {
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+    }
+
+    // Save & apply shake
+    ctx.save();
+    if (shakeX !== 0) {
+      ctx.translate(shakeX * (Math.random() > 0.5 ? 1 : -1), 0);
+    }
+
+    // ── Draw fallers ──
+    for (const f of fallers) {
+      drawFaller(f, now);
+    }
+
+    // ── Draw particles ──
+    for (const p of particles) {
+      ctx.globalAlpha = Math.max(0, p.life * p.life);
+      ctx.fillStyle   = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // ── Draw float texts ──
+    for (const t of floatTexts) {
+      const alpha = Math.max(0, t.life);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.font        = 'bold 18px -apple-system, system-ui, sans-serif';
+      ctx.textAlign   = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor  = t.color;
+      ctx.shadowBlur   = 12;
+      ctx.fillStyle    = t.color;
+      ctx.fillText(t.text, t.x, t.y);
+      ctx.restore();
+    }
+
+    ctx.restore(); // end shake
+
+    // ── Flash overlay ──
+    if (flashAlpha > 0) {
+      ctx.globalAlpha = flashAlpha;
+      ctx.fillStyle   = flashColor;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawFaller(f, now) {
+    if (f.dead) return;
+
+    const isTarget = f.num === currentTarget;
+    let scale = f.scale;
+
+    if (f.dying) {
+      // Scale up and fade out
+      const t = f.dyingAge / 18;
+      scale   = 1 + t * 0.6;
+      ctx.globalAlpha = Math.max(0, 1 - t * 1.3);
+    }
+
+    ctx.save();
+    ctx.translate(f.x, f.y);
+    ctx.scale(scale, scale);
+
+    const isPrimeNum = f.prime;
+    const pulse = 0.5 + 0.5 * Math.sin(now * 0.004);
+
+    if (isTarget) {
+      // Pulsing glow — gold for prime, purple for non-prime
+      const glowColor0 = isPrimeNum ? 'rgba(251,191,36,0.4)'  : 'rgba(192,132,252,0.35)';
+      const glowColor1 = isPrimeNum ? 'rgba(245,158,11,0.15)' : 'rgba(168,85,247,0.15)';
+      const glowColor2 = isPrimeNum ? 'rgba(245,158,11,0)'    : 'rgba(168,85,247,0)';
+      const glowR = RADIUS + 10 + pulse * 8;
+      const glow = ctx.createRadialGradient(0, 0, RADIUS * 0.3, 0, 0, glowR);
+      glow.addColorStop(0,   glowColor0);
+      glow.addColorStop(0.5, glowColor1);
+      glow.addColorStop(1,   glowColor2);
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(0, 0, glowR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Main circle
+      const grad = ctx.createRadialGradient(-RADIUS * 0.3, -RADIUS * 0.3, 1, 0, 0, RADIUS);
+      if (isPrimeNum) {
+        grad.addColorStop(0,   '#FDE68A');
+        grad.addColorStop(0.4, '#F59E0B');
+        grad.addColorStop(1,   '#B45309');
+        ctx.shadowColor = '#F59E0B';
+      } else {
+        grad.addColorStop(0,   '#E9D5FF');
+        grad.addColorStop(0.4, '#A855F7');
+        grad.addColorStop(1,   '#6B21A8');
+        ctx.shadowColor = '#A855F7';
+      }
+      ctx.fillStyle = grad;
+      ctx.shadowBlur  = 18 + pulse * 10;
+
+    } else if (isPrimeNum) {
+      // Non-target prime — dimmer gold tint so players can spot upcoming primes
+      const grad = ctx.createRadialGradient(-RADIUS * 0.25, -RADIUS * 0.25, 1, 0, 0, RADIUS);
+      grad.addColorStop(0,   '#3D3010');
+      grad.addColorStop(1,   '#2A1F0A');
+      ctx.fillStyle  = grad;
+      ctx.shadowColor = 'rgba(245,158,11,0.3)';
+      ctx.shadowBlur  = 6;
+    } else {
+      // Muted slate for non-target non-prime
+      const grad = ctx.createRadialGradient(-RADIUS * 0.25, -RADIUS * 0.25, 1, 0, 0, RADIUS);
+      grad.addColorStop(0,   '#2A2A3E');
+      grad.addColorStop(1,   '#1A1A2E');
+      ctx.fillStyle  = grad;
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur  = 0;
+    }
+
+    // Draw circle
+    ctx.beginPath();
+    ctx.arc(0, 0, RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Circle border
+    let borderColor;
+    if (isTarget && isPrimeNum)      borderColor = 'rgba(251,191,36,0.9)';
+    else if (isTarget)               borderColor = 'rgba(192,132,252,0.8)';
+    else if (isPrimeNum)             borderColor = 'rgba(245,158,11,0.4)';
+    else                             borderColor = 'rgba(99,102,241,0.3)';
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth   = (isTarget || isPrimeNum) ? 2.5 : 1.5;
+    ctx.stroke();
+
+    // Number text
+    ctx.shadowBlur  = 0;
+    ctx.font        = `bold ${RADIUS * 0.85}px -apple-system, system-ui, sans-serif`;
+    ctx.textAlign   = 'center';
+    ctx.textBaseline = 'middle';
+    if (isTarget) {
+      ctx.fillStyle   = '#FFFFFF';
+      ctx.shadowColor = isPrimeNum ? '#FDE68A' : '#E9D5FF';
+      ctx.shadowBlur  = 6;
+    } else if (isPrimeNum) {
+      ctx.fillStyle = 'rgba(251,191,36,0.8)';
+    } else {
+      ctx.fillStyle = 'rgba(148,163,184,0.7)';
+    }
+    ctx.fillText(String(f.num), 0, 1);
+
+    // ★ badge on non-target primes so players learn to spot them
+    if (isPrimeNum && !isTarget) {
+      ctx.font      = `bold 9px -apple-system, system-ui, sans-serif`;
+      ctx.fillStyle = 'rgba(245,158,11,0.7)';
+      ctx.shadowBlur = 0;
+      ctx.fillText('★', RADIUS * 0.55, -RADIUS * 0.62);
+    }
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // ─────────────────────────────────────────────
+  // Boot
+  // ─────────────────────────────────────────────
+  function boot() {
+    resize();
+    // Draw initial dark frame
+    const W = cw(), H = ch();
+    ctx.fillStyle = '#0D0D1A';
+    ctx.fillRect(0, 0, W, H);
+
+    // Auto-init if no native host sends GAME_INIT within 300ms
+    setTimeout(function () {
+      if (gameState === 'idle') {
+        init(null);
+      }
+    }, 300);
+  }
+
+  boot();
+
+})();
+</script>
+</body>
+</html>

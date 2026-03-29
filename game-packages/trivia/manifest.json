@@ -1,0 +1,12 @@
+{
+  "id": "trivia",
+  "name": "Trivia",
+  "version": "1.0.0",
+  "description": "4-option multiple choice trivia question",
+  "layout": "overlay_bottom",
+  "configSchema": {
+    "question": { "type": "string", "label": "Question" },
+    "options":   { "type": "string[4]", "label": "Options (A/B/C/D)" },
+    "correctIndex": { "type": "number", "label": "Correct option (0–3)", "min": 0, "max": 3 }
+  }
+}
