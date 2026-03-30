@@ -5,6 +5,8 @@ import { ShowsPage } from './pages/ShowsPage';
 import { GamesPage } from './pages/GamesPage';
 import { LiveOpsPage } from './pages/LiveOpsPage';
 import { ConfigPage } from './pages/ConfigPage';
+import { EarnRatesPage } from './pages/EarnRatesPage';
+import { RewardRulesPage } from './pages/RewardRulesPage';
 
 export default function App() {
   return (
@@ -17,6 +19,8 @@ export default function App() {
           <Route path="/games" element={<GamesPage />} />
           <Route path="/liveops" element={<LiveOpsPage />} />
           <Route path="/config" element={<ConfigPage />} />
+          <Route path="/earn-rates" element={<EarnRatesPage />} />
+          <Route path="/reward-rules" element={<RewardRulesPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -100,6 +100,44 @@ export async function getMediaLibrary(): Promise<MediaFile[]> {
   return handleResponse<MediaFile[]>(res);
 }
 
+// ─── PlayClips ────────────────────────────────────────────────────────────────
+
+export interface ClipRangeInput {
+  startMs: number;
+  endMs: number;
+  roundIndex: number;
+  gameType: string;
+  config: Record<string, unknown>;
+  gameOffsetMs: number;
+}
+
+export interface SavedClip {
+  id: string;
+  gameType: string;
+  clipStartMs: number;
+  clipEndMs: number;
+  gameOffsetMs: number;
+  status: string;
+  mediaUrl: string;
+}
+
+export async function getShowClips(showId: string): Promise<SavedClip[]> {
+  const res = await fetch(`${BASE_URL}/admin/shows/${showId}/clips`);
+  return handleResponse<SavedClip[]>(res);
+}
+
+export async function createShowClips(
+  showId: string,
+  ranges: ClipRangeInput[],
+): Promise<{ created: number }> {
+  const res = await fetch(`${BASE_URL}/admin/shows/${showId}/clips`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(ranges),
+  });
+  return handleResponse<{ created: number }>(res);
+}
+
 // ─── Trivia questions ─────────────────────────────────────────────────────────
 
 export interface TriviaQuestion {

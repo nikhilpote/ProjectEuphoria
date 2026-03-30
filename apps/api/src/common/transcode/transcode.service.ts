@@ -59,6 +59,39 @@ export class TranscodeService {
     return outputPath;
   }
 
+  /**
+   * Extract a video segment from startMs to endMs and re-encode for mobile.
+   * Output is written to outputPath. Caller manages cleanup.
+   */
+  async extractClip(
+    inputPath: string,
+    startMs: number,
+    endMs: number,
+    outputPath: string,
+  ): Promise<void> {
+    const startSec = startMs / 1000;
+    const durationSec = (endMs - startMs) / 1000;
+
+    this.logger.log(`Extracting clip ${startSec}s–${startSec + durationSec}s from ${inputPath}`);
+
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(inputPath)
+        .setStartTime(startSec)
+        .setDuration(durationSec)
+        .videoCodec('libx264')
+        .videoBitrate(VIDEO_BITRATE)
+        .addOption('-maxrate', VIDEO_MAX_BITRATE)
+        .addOption('-bufsize', VIDEO_BUFFER_SIZE)
+        .audioCodec('aac')
+        .audioBitrate(AUDIO_BITRATE)
+        .addOption('-movflags', '+faststart')
+        .output(outputPath)
+        .on('end', () => resolve())
+        .on('error', (err: Error) => reject(err))
+        .run();
+    });
+  }
+
   private runFfmpeg(inputPath: string, outputPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)

@@ -70,6 +70,8 @@ export function GameWebViewBridge({
         onMessage={handleMessage}
         javaScriptEnabled
         domStorageEnabled
+        scrollEnabled={false}
+        bounces={false}
         style={styles.webView}
       />
       {loading && (

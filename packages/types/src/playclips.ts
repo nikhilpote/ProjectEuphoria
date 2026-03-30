@@ -25,8 +25,14 @@ export interface PlayClip {
 export interface PlayClipSummary {
   id: string;
   showId: string;
-  gameType: GameType;
+  gameType: GameType | string;
   hlsUrl: string | null;
+  mediaUrl: string;
+  config: Record<string, unknown>;
+  clipStartMs: number;
+  clipEndMs: number;
+  /** Ms from clip start when game overlay should appear */
+  gameOffsetMs: number;
   status: ClipStatus;
   playCount: number;
 }

@@ -106,7 +106,8 @@ export type CoinTransactionType =
   | 'show_winnings'
   | 'show_entry_fee'
   | 'bonus_grant'
-  | 'refund';
+  | 'refund'
+  | 'playclip_reward';
 
 export interface CoinTransactionsTable {
   id: PK;
@@ -157,9 +158,17 @@ export interface PlayClipsTable {
   id: PK;
   show_id: string;
   round_index: number;
-  game_type: ColumnType<GameType, GameType, GameType>;
+  game_type: ColumnType<string, string, string>;
+  /** Full game config — stores question, options, correct answer etc. */
+  config: JSONColumnType<Record<string, unknown>>;
   media_url: string;
   hls_url: string | null;
+  /** Start of this clip within the original show video (ms) */
+  clip_start_ms: number;
+  /** End of this clip within the original show video (ms) */
+  clip_end_ms: number;
+  /** Ms from clip start when game overlay should appear */
+  game_offset_ms: number;
   status: ColumnType<ClipStatus, ClipStatus, ClipStatus>;
   play_count: ColumnType<number, number, number>;
   created_at: CreatedAt;
@@ -250,6 +259,53 @@ export interface GamePackagesTable {
 }
 
 // ---------------------------------------------------------------------------
+// coin_reward_rules
+// ---------------------------------------------------------------------------
+
+export interface RuleCondition {
+  field: string;
+  op: 'eq' | 'neq' | 'gte' | 'lte' | 'gt' | 'lt';
+  value: string | number | boolean;
+}
+
+export interface RuleReward {
+  type: 'fixed' | 'multiplier' | 'range';
+  amount?: number;
+  value?: number;
+  min?: number;
+  max?: number;
+}
+
+export interface CoinRewardRulesTable {
+  id: PK;
+  name: string;
+  description: string;
+  trigger: string;
+  conditions: JSONColumnType<RuleCondition[]>;
+  reward: JSONColumnType<RuleReward>;
+  stack_mode: ColumnType<'additive' | 'multiplier' | 'override', 'additive' | 'multiplier' | 'override', 'additive' | 'multiplier' | 'override'>;
+  priority: ColumnType<number, number, number>;
+  active_from: Date | null;
+  active_until: Date | null;
+  enabled: ColumnType<boolean, boolean, boolean>;
+  created_at: CreatedAt;
+  updated_at: UpdatedAt;
+}
+
+// ---------------------------------------------------------------------------
+// coin_earn_rates
+// ---------------------------------------------------------------------------
+
+export interface CoinEarnRatesTable {
+  key: string;
+  label: string;
+  description: string;
+  amount: ColumnType<number, number, number>;
+  enabled: ColumnType<boolean, boolean, boolean>;
+  updated_at: UpdatedAt;
+}
+
+// ---------------------------------------------------------------------------
 // Database interface (root type passed to Kysely<DB>)
 // ---------------------------------------------------------------------------
 
@@ -265,4 +321,6 @@ export interface DB {
   feature_flags: FeatureFlagsTable;
   trivia_questions: TriviaQuestionsTable;
   game_packages: GamePackagesTable;
+  coin_earn_rates: CoinEarnRatesTable;
+  coin_reward_rules: CoinRewardRulesTable;
 }

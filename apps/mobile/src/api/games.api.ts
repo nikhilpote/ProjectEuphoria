@@ -136,4 +136,21 @@ export async function validateTriviaAnswer(
   return result.data;
 }
 
+// ─── Game packages ────────────────────────────────────────────────────────────
+
+export interface GamePackageSummary {
+  id: string;       // matches gameType string e.g. 'number_dash'
+  name: string;
+  version: string;
+  bundleUrl: string;
+  isEnabled: boolean;
+}
+
+export async function getGamePackages(): Promise<GamePackageSummary[]> {
+  const res = await fetch(`${API_BASE_URL}/games`);
+  if (!res.ok) return [];
+  const body = await res.json() as { success: boolean; data?: GamePackageSummary[] };
+  return body.data ?? [];
+}
+
 export { ApiRequestError };

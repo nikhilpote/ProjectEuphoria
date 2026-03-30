@@ -10,6 +10,8 @@ import {
   BadRequestException,
   ValidationPipe,
   Query,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
@@ -17,7 +19,7 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import type { Express } from 'express';
-import { AdminService } from './admin.service';
+import { AdminService, ClipRangeInput } from './admin.service';
 import { StorageService, type MediaFile } from '../../common/storage/storage.service';
 import { TranscodeService } from '../../common/transcode/transcode.service';
 import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
@@ -103,6 +105,22 @@ export class AdminController {
     const uploadPath = await this.transcodeService.transcodeForMobile(file.path, file.filename);
     const url = await this.storageService.upload(uploadPath, file.filename);
     return { url };
+  }
+
+  @Get('shows/:showId/clips')
+  @ApiOperation({ summary: 'List existing PlayClips for a show' })
+  getShowClips(@Param('showId') showId: string) {
+    return this.adminService.getShowClips(showId);
+  }
+
+  @Post('shows/:showId/clips')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Extract clip ranges from a completed show video and create PlayClips' })
+  createShowClips(
+    @Param('showId') showId: string,
+    @Body() ranges: ClipRangeInput[],
+  ): Promise<{ created: number }> {
+    return this.adminService.createShowClips(showId, ranges);
   }
 
   @Post('feature-flags')

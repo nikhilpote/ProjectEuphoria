@@ -11,7 +11,17 @@ export type CoinTransactionType =
   | 'show_winnings' // prize from show
   | 'show_entry_fee' // debit to enter show
   | 'bonus_grant' // admin bonus
-  | 'refund'; // refund of entry fee or IAP
+  | 'refund' // refund of entry fee or IAP
+  | 'playclip_reward'; // earned by playing a PlayClip
+
+export interface EarnRate {
+  key: string;
+  label: string;
+  description: string;
+  amount: number;
+  enabled: boolean;
+  updatedAt: string;
+}
 
 export interface CoinTransaction {
   id: string;
@@ -67,4 +77,58 @@ export interface IAPProduct {
   productId: string;
   coinAmount: number;
   priceUsd: number;
+}
+
+// ---------------------------------------------------------------------------
+// Reward rules engine
+// ---------------------------------------------------------------------------
+
+export interface RuleCondition {
+  field: string;
+  op: 'eq' | 'neq' | 'gte' | 'lte' | 'gt' | 'lt';
+  value: string | number | boolean;
+}
+
+export interface RuleReward {
+  type: 'fixed' | 'multiplier' | 'range';
+  amount?: number;    // for 'fixed'
+  value?: number;     // for 'multiplier' (e.g. 1.5 = 1.5x)
+  min?: number;       // for 'range'
+  max?: number;       // for 'range'
+}
+
+export interface RewardRule {
+  id: string;
+  name: string;
+  description: string;
+  trigger: string;
+  conditions: RuleCondition[];
+  reward: RuleReward;
+  stackMode: 'additive' | 'multiplier' | 'override';
+  priority: number;
+  activeFrom: string | null;
+  activeUntil: string | null;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RewardContext {
+  trigger: string;
+  userId: string;
+  gameType?: string;
+  score?: number;
+  streakDays?: number;
+  isFirstPlay?: boolean;
+  showPlayerCount?: number;
+  roundIndex?: number;
+}
+
+export interface RewardPreviewResult {
+  totalCoins: number;
+  matchedRules: Array<{
+    rule: RewardRule;
+    contribution: string;  // e.g. '+10' or '×1.5'
+  }>;
+  breakdown: string;  // e.g. '(10 + 15 + 5) × 1.5 = 45'
 }

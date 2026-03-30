@@ -11,7 +11,8 @@ const navItems: NavItem[] = [
   { label: 'Shows', href: '/shows', icon: '◈' },
   { label: 'Games', href: '/games', icon: '⊞' },
   { label: 'LiveOps', href: '/liveops', icon: '◉' },
-  { label: 'Config', href: '/config', icon: '◎' },
+  { label: 'Reward Rules', href: '/reward-rules', icon: '◎' },
+  { label: 'Config', href: '/config', icon: '⊙' },
 ];
 
 export function Sidebar() {

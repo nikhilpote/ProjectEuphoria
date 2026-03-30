@@ -1,3 +1,6 @@
+// Required for Expo Router entry resolution in monorepos
+process.env.EXPO_USE_METRO_WORKSPACE_ROOT = '1';
+
 const { getDefaultConfig } = require('expo/metro-config');
 const { FileStore } = require('metro-cache');
 const path = require('path');

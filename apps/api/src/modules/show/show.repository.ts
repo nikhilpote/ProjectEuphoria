@@ -157,6 +157,22 @@ export class ShowRepository {
    * the winner list in show_ended event).
    * Returns rows in arbitrary order.
    */
+  /** Returns round_reached and coins_earned for every participant in a show */
+  async getParticipantResults(
+    showId: string,
+  ): Promise<{ userId: string; roundReached: number; coinsEarned: number }[]> {
+    const rows = await this.db
+      .selectFrom('show_participants')
+      .select(['user_id', 'round_reached', 'coins_earned'])
+      .where('show_id', '=', showId)
+      .execute();
+    return rows.map((r) => ({
+      userId: r.user_id,
+      roundReached: r.round_reached,
+      coinsEarned: r.coins_earned,
+    }));
+  }
+
   async findUserProfiles(userIds: string[]) {
     if (userIds.length === 0) return [];
     return this.db

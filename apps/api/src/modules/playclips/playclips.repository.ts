@@ -1,5 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { DB } from '../../database/schema';
 import { KYSELY_TOKEN } from '../../database/database.module';
 import type { PlayClipSummary, ClipPlaySession } from '@euphoria/types';
@@ -11,6 +11,26 @@ export class PlayClipsRepository {
     private readonly db: Kysely<DB>,
   ) {}
 
+  async findByShowId(showId: string) {
+    const rows = await this.db
+      .selectFrom('play_clips')
+      .selectAll()
+      .where('show_id', '=', showId)
+      .orderBy('clip_start_ms', 'asc')
+      .execute();
+
+    return rows.map((r) => ({
+      id: r.id,
+      showId: r.show_id,
+      gameType: r.game_type,
+      clipStartMs: r.clip_start_ms,
+      clipEndMs: r.clip_end_ms,
+      gameOffsetMs: r.game_offset_ms,
+      status: r.status,
+      mediaUrl: r.media_url,
+    }));
+  }
+
   async findById(id: string) {
     return this.db
       .selectFrom('play_clips')
@@ -20,12 +40,25 @@ export class PlayClipsRepository {
       .executeTakeFirst();
   }
 
-  async findReady(limit: number = 20, offset: number = 0): Promise<PlayClipSummary[]> {
-    const rows = await this.db
+  async findReady(limit: number = 20, offset: number = 0, userId?: string): Promise<PlayClipSummary[]> {
+    let query = this.db
       .selectFrom('play_clips')
-      .select(['id', 'show_id', 'game_type', 'hls_url', 'status', 'play_count'])
-      .where('status', '=', 'ready')
-      .orderBy('play_count', 'desc')
+      .selectAll()
+      .where('status', '=', 'ready');
+
+    if (userId) {
+      // Exclude clips this user has already completed
+      query = query.where('id', 'not in', (qb) =>
+        qb
+          .selectFrom('clip_play_sessions')
+          .select('clip_id')
+          .where('user_id', '=', userId)
+          .where('completed_at', 'is not', null),
+      );
+    }
+
+    const rows = await query
+      .orderBy('created_at', 'desc')
       .limit(limit)
       .offset(offset)
       .execute();
@@ -35,9 +68,43 @@ export class PlayClipsRepository {
       showId: r.show_id,
       gameType: r.game_type as PlayClipSummary['gameType'],
       hlsUrl: r.hls_url,
+      mediaUrl: r.media_url,
+      config: (r.config ?? {}) as Record<string, unknown>,
+      clipStartMs: r.clip_start_ms,
+      clipEndMs: r.clip_end_ms,
+      gameOffsetMs: r.game_offset_ms,
       status: r.status,
       playCount: r.play_count,
     }));
+  }
+
+  async createClip(input: {
+    showId: string;
+    roundIndex: number;
+    gameType: string;
+    config: Record<string, unknown>;
+    mediaUrl: string;
+    clipStartMs: number;
+    clipEndMs: number;
+    gameOffsetMs: number;
+  }) {
+    return this.db
+      .insertInto('play_clips')
+      .values({
+        show_id: input.showId,
+        round_index: input.roundIndex,
+        game_type: input.gameType as never,
+        config: JSON.stringify(input.config) as never,
+        media_url: input.mediaUrl,
+        hls_url: null,
+        clip_start_ms: input.clipStartMs,
+        clip_end_ms: input.clipEndMs,
+        game_offset_ms: input.gameOffsetMs,
+        status: 'ready',
+        play_count: 0,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
   }
 
   async createSession(
@@ -73,6 +140,29 @@ export class PlayClipsRepository {
       completedAt: row.completed_at?.toISOString() ?? null,
       score: row.score,
     };
+  }
+
+  async findSessionById(sessionId: string) {
+    return this.db
+      .selectFrom('clip_play_sessions')
+      .selectAll()
+      .where('id', '=', sessionId)
+      .executeTakeFirst();
+  }
+
+  /** Returns { beaten, total } — how many completed sessions scored below myScore, and total count */
+  async getPercentileRank(clipId: string, myScore: number): Promise<{ beaten: number; total: number }> {
+    const result = await this.db
+      .selectFrom('clip_play_sessions')
+      .select([
+        sql<number>`COUNT(*)::int`.as('total'),
+        sql<number>`COUNT(*) FILTER (WHERE score < ${myScore})::int`.as('beaten'),
+      ])
+      .where('clip_id', '=', clipId)
+      .where('completed_at', 'is not', null)
+      .executeTakeFirstOrThrow();
+
+    return { beaten: result.beaten ?? 0, total: result.total ?? 0 };
   }
 
   async completeSession(

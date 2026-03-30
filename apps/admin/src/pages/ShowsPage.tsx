@@ -6,9 +6,12 @@ import {
   deleteShow,
   getShowDetail,
   getMediaLibrary,
+  createShowClips,
+  getShowClips,
   type Show,
   type CreateShowInput,
   type MediaFile,
+  type ClipRangeInput,
 } from '../api/shows';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -59,6 +62,14 @@ interface UIMarker {
   duration: number;
   gameType: string;
   config: Record<string, unknown>;
+}
+
+interface UIClipRange {
+  id: string;
+  startAt: number; // seconds
+  endAt: number;   // seconds
+  saved: boolean;  // true = already in DB, false = pending save
+  saving?: boolean;
 }
 
 type ToastVariant = 'success' | 'error';
@@ -791,6 +802,7 @@ interface ShowEditorModalProps {
   editShow?: {
     id: string;
     title: string;
+    status: string;
     scheduledAt: string;
     lobbyDurationMs?: number;
     videoUrl: string | null;
@@ -830,6 +842,35 @@ function ShowEditorModal({ onClose, onSaved, onToast, editShow }: ShowEditorModa
     isEditing ? rawSequenceToUIMarkers(editShow!.gameSequence) : [],
   );
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
+
+  // ── Clip ranges (completed shows only)
+  const isCompleted = editShow?.status === 'completed';
+  const [clipRanges, setClipRanges] = useState<UIClipRange[]>([]);
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+  const [savingClips, setSavingClips] = useState(false);
+
+  // Load existing saved clips when opening a completed show
+  useEffect(() => {
+    if (!isCompleted || !editShow?.id) return;
+    getShowClips(editShow.id)
+      .then((saved) => {
+        setClipRanges(saved.map((c) => ({
+          id: c.id,
+          startAt: c.clipStartMs / 1000,
+          endAt: c.clipEndMs / 1000,
+          saved: true,
+        })));
+      })
+      .catch(() => {/* ignore — user can add manually */});
+  }, [isCompleted, editShow?.id]);
+  const clipRangeRef = useRef<HTMLDivElement>(null);
+  const clipDragRef = useRef<{
+    clipId: string;
+    type: 'move' | 'resize';
+    startX: number;
+    startAt: number;
+    startEnd: number;
+  } | null>(null);
 
   // ── Misc
   const [submitting, setSubmitting] = useState(false);
@@ -1228,6 +1269,108 @@ function ShowEditorModal({ onClose, onSaved, onToast, editShow }: ShowEditorModa
     }
   };
 
+  // ── Clip range drag handlers
+  const handleClipMouseDown = useCallback((e: React.MouseEvent, clipId: string, type: 'move' | 'resize') => {
+    e.stopPropagation();
+    const clip = clipRanges.find((c) => c.id === clipId);
+    if (!clip || !clipRangeRef.current) return;
+    clipDragRef.current = { clipId, type, startX: e.clientX, startAt: clip.startAt, startEnd: clip.endAt };
+    setSelectedClipId(clipId);
+
+    const onMove = (ev: MouseEvent) => {
+      const ds = clipDragRef.current;
+      if (!ds || !clipRangeRef.current) return;
+      const rect = clipRangeRef.current.getBoundingClientRect();
+      const dx = ev.clientX - ds.startX;
+      const dtSec = (dx / rect.width) * viewDuration;
+      setClipRanges((prev) => prev.map((c) => {
+        if (c.id !== ds.clipId) return c;
+        if (ds.type === 'move') {
+          const dur = ds.startEnd - ds.startAt;
+          const newStart = Math.max(0, Math.min(videoDuration - dur, ds.startAt + dtSec));
+          return { ...c, startAt: Math.round(newStart), endAt: Math.round(newStart + dur) };
+        } else {
+          const newEnd = Math.max(ds.startAt + 5, Math.min(videoDuration, ds.startEnd + dtSec));
+          return { ...c, endAt: Math.round(newEnd) };
+        }
+      }));
+    };
+    const onUp = () => {
+      clipDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [clipRanges, viewDuration, videoDuration]);
+
+  const addClipRange = useCallback(() => {
+    const dur = 30;
+    const startAt = Math.max(0, Math.min(videoDuration - dur, Math.round(currentTime)));
+    const newClip: UIClipRange = { id: uid(), startAt, endAt: startAt + dur, saved: false };
+    setClipRanges((prev) => [...prev, newClip]);
+    setSelectedClipId(newClip.id);
+  }, [currentTime, videoDuration]);
+
+  const deleteClipRange = useCallback((id: string) => {
+    setClipRanges((prev) => prev.filter((c) => c.id !== id));
+    setSelectedClipId((cur) => (cur === id ? null : cur));
+  }, []);
+
+  const handleSaveClips = async () => {
+    if (savingClips || !editShow) return;
+
+    const unsaved = clipRanges.filter((c) => !c.saved);
+    if (!unsaved.length) { onToast('error', 'No new clips to save'); return; }
+
+    const sortedGames = [...markers].sort((a, b) => a.at - b.at);
+
+    // Validate all clips have a matching game marker before saving any
+    for (const clip of unsaved) {
+      const match = sortedGames.find(
+        (m) => m.at >= clip.startAt && m.at + m.duration <= clip.endAt + 5,
+      );
+      if (!match) {
+        onToast('error', `Clip ${formatTime(clip.startAt)}–${formatTime(clip.endAt)} has no game inside it`);
+        return;
+      }
+    }
+
+    setSavingClips(true);
+    let savedCount = 0;
+
+    for (const clip of unsaved) {
+      // Mark this specific clip as saving
+      setClipRanges((prev) => prev.map((c) => c.id === clip.id ? { ...c, saving: true } : c));
+
+      const match = sortedGames.find(
+        (m) => m.at >= clip.startAt && m.at + m.duration <= clip.endAt + 5,
+      )!;
+
+      try {
+        await createShowClips(editShow.id, [{
+          startMs: Math.round(clip.startAt * 1000),
+          endMs: Math.round(clip.endAt * 1000),
+          roundIndex: sortedGames.indexOf(match),
+          gameType: match.gameType,
+          config: { ...match.config, timeLimitMs: Math.round(match.duration * 1000) },
+          gameOffsetMs: Math.max(0, Math.round((match.at - clip.startAt) * 1000)),
+        }]);
+        savedCount++;
+        // Mark as saved
+        setClipRanges((prev) => prev.map((c) => c.id === clip.id ? { ...c, saved: true, saving: false } : c));
+      } catch (err) {
+        setClipRanges((prev) => prev.map((c) => c.id === clip.id ? { ...c, saving: false } : c));
+        onToast('error', `Failed to save clip ${formatTime(clip.startAt)}–${formatTime(clip.endAt)}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    }
+
+    setSavingClips(false);
+    if (savedCount > 0) {
+      onToast('success', `${savedCount} clip${savedCount !== 1 ? 's' : ''} saved`);
+    }
+  };
+
   // ── Derived
 
   const sortedMarkers = [...markers].sort((a, b) => a.at - b.at);
@@ -1602,6 +1745,86 @@ function ShowEditorModal({ onClose, onSaved, onToast, editShow }: ShowEditorModa
           <p className="mt-1.5 text-[10px] text-gray-700 select-none">
             Click to seek · Double-click empty area to add marker · Drag block to move · Drag right edge to resize
           </p>
+
+          {/* Clip range row — completed shows only */}
+          {isCompleted && (
+            <div className="mt-2">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[9px] font-semibold text-amber-500/70 uppercase tracking-wider">Clip Ranges</span>
+                {selectedClipId && (
+                  <button
+                    type="button"
+                    onClick={() => deleteClipRange(selectedClipId)}
+                    className="text-[9px] text-red-400/70 hover:text-red-400 transition-colors"
+                  >
+                    ✕ Remove
+                  </button>
+                )}
+              </div>
+              <div
+                ref={clipRangeRef}
+                className="relative rounded-lg bg-[#0A0A14] border border-amber-500/20 overflow-visible select-none"
+                style={{ height: 28 }}
+                onClick={(e) => {
+                  if (e.target === clipRangeRef.current) setSelectedClipId(null);
+                }}
+              >
+                {/* Grid lines */}
+                {Array.from({ length: 9 }).map((_, i) => (
+                  <div key={i} className="absolute inset-y-0 border-l border-[#1E1E35]" style={{ left: `${(i + 1) * 10}%` }} />
+                ))}
+                {clipRanges.map((clip) => {
+                  if (clip.endAt < clampedViewStart || clip.startAt > clampedViewStart + viewDuration) return null;
+                  const leftPct = ((clip.startAt - clampedViewStart) / viewDuration) * 100;
+                  const widthPct = Math.max(((clip.endAt - clip.startAt) / viewDuration) * 100, 1);
+                  const isSelected = selectedClipId === clip.id;
+                  return (
+                    <div
+                      key={clip.id}
+                      onMouseDown={(e) => !clip.saved && handleClipMouseDown(e, clip.id, 'move')}
+                      title={`Clip ${formatTime(clip.startAt)} – ${formatTime(clip.endAt)}${clip.saved ? ' (saved)' : ''}`}
+                      style={{
+                        position: 'absolute',
+                        left: `${leftPct}%`,
+                        width: `${widthPct}%`,
+                        top: 3,
+                        height: 22,
+                        backgroundColor: clip.saved
+                          ? 'rgba(16,185,129,0.15)'
+                          : isSelected ? 'rgba(245,158,11,0.35)' : 'rgba(245,158,11,0.18)',
+                        border: clip.saved
+                          ? '1.5px solid rgba(16,185,129,0.5)'
+                          : isSelected ? '1.5px solid rgba(245,158,11,0.9)' : '1.5px solid rgba(245,158,11,0.4)',
+                        borderRadius: 4,
+                        cursor: clip.saved ? 'default' : 'grab',
+                        display: 'flex',
+                        alignItems: 'center',
+                        overflow: 'hidden',
+                        zIndex: isSelected ? 5 : 2,
+                        opacity: clip.saving ? 0.6 : 1,
+                      }}
+                    >
+                      <span style={{ flex: 1, fontSize: 9, fontWeight: 700, color: clip.saved ? 'rgba(16,185,129,0.9)' : 'rgba(245,158,11,0.9)', paddingLeft: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none' }}>
+                        {clip.saving ? '⏳ ' : clip.saved ? '✓ ' : ''}{formatTime(clip.startAt)}–{formatTime(clip.endAt)}
+                      </span>
+                      {/* Resize handle — only for unsaved clips */}
+                      {!clip.saved && (
+                        <div
+                          onMouseDown={(e) => handleClipMouseDown(e, clip.id, 'resize')}
+                          style={{ width: 6, alignSelf: 'stretch', cursor: 'col-resize', background: 'rgba(245,158,11,0.3)', borderRadius: '0 3px 3px 0', flexShrink: 0 }}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+                {clipRanges.length === 0 && (
+                  <span className="absolute inset-0 flex items-center justify-center text-[9px] text-amber-500/30 pointer-events-none">
+                    Press "Add Clip Range" to mark segments for PlayClips
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Timeline Toolbar ── */}
@@ -1654,6 +1877,32 @@ function ShowEditorModal({ onClose, onSaved, onToast, editShow }: ShowEditorModa
             </svg>
             Add Marker
           </button>
+
+          {/* Clip range controls — completed shows only */}
+          {isCompleted && (
+            <>
+              <div className="w-px h-4 bg-[#2A2A4A] mx-1" />
+              <button
+                type="button"
+                onClick={addClipRange}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition-all"
+              >
+                <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                </svg>
+                Add Clip Range
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveClips}
+                disabled={savingClips || clipRanges.filter((c) => !c.saved).length === 0}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-400/40 hover:bg-amber-500/25 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {savingClips ? 'Saving…' : (() => { const n = clipRanges.filter((c) => !c.saved).length; return `Save ${n} Clip${n !== 1 ? 's' : ''}`; })()}
+              </button>
+            </>
+          )}
+
           <div className="flex-1" />
           {/* Zoom controls */}
           <div className="flex items-center gap-1 ml-2">
@@ -1767,6 +2016,7 @@ export function ShowsPage() {
   const [editingShow, setEditingShow] = useState<{
     id: string;
     title: string;
+    status: string;
     scheduledAt: string;
     lobbyDurationMs?: number;
     videoUrl: string | null;
@@ -1820,6 +2070,7 @@ export function ShowsPage() {
       setEditingShow({
         id: detail.id,
         title: detail.title,
+        status: detail.status,
         scheduledAt: detail.scheduledAt,
         lobbyDurationMs: detail.lobbyDurationMs,
         videoUrl: detail.videoUrl,

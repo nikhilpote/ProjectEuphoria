@@ -413,28 +413,47 @@ export class ShowOrchestrator {
       this.logger.error(`awardWinnerCoins error: ${err.message}`),
     );
 
-    const winnerProfiles = await this.showRepository.findUserProfiles(winners);
+    const [winnerProfiles, participantResults, show] = await Promise.all([
+      this.showRepository.findUserProfiles(winners),
+      this.showRepository.getParticipantResults(showId),
+      this.showRepository.findById(showId),
+    ]);
 
-    const showEndedEvent: ShowEndedEvent = {
-      showId,
-      winners: winnerProfiles.map((u) => ({
-        user: {
-          id: u.id,
-          displayName: u.display_name,
-          avatarUrl: u.avatar_url,
-          coinBalance: u.coin_balance,
-        },
-        coinsEarned: 500,
-      })),
-      totalPlayers: players.length,
-      playerResult: {
-        status: 'eliminated',
-        roundReached: 0,
-        coinsEarned: 0,
+    const winnerSet = new Set(winners);
+    const resultByUser = new Map(participantResults.map((r) => [r.userId, r]));
+    const totalRounds = show
+      ? (show.game_sequence as unknown as unknown[]).length
+      : 0;
+
+    const baseWinners = winnerProfiles.map((u) => ({
+      user: {
+        id: u.id,
+        displayName: u.display_name,
+        avatarUrl: u.avatar_url,
+        coinBalance: u.coin_balance,
       },
-    };
+      coinsEarned: 500,
+    }));
 
-    this.broadcast(showId, 'show_ended', showEndedEvent);
+    // Emit a personalised show_ended to every connected player so each one
+    // sees the correct winner/eliminated status and their own coins earned.
+    if (this.gateway) {
+      for (const userId of players) {
+        const isWinner = winnerSet.has(userId);
+        const result = resultByUser.get(userId);
+        const personalEvent: ShowEndedEvent = {
+          showId,
+          winners: baseWinners,
+          totalPlayers: players.length,
+          playerResult: {
+            status: isWinner ? 'winner' : 'eliminated',
+            roundReached: isWinner ? totalRounds : (result?.roundReached ?? 0),
+            coinsEarned: result?.coinsEarned ?? (isWinner ? 500 : 0),
+          },
+        };
+        this.gateway.emitToUser(showId, userId, 'show_ended', personalEvent);
+      }
+    }
 
     this.cleanupRedisKeys(showId).catch((err: Error) =>
       this.logger.warn(`Redis cleanup error for show ${showId}: ${err.message}`),

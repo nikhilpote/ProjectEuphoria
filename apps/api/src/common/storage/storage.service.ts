@@ -12,6 +12,10 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createReadStream, promises as fs } from 'fs';
 import { lookup as mimeLookup } from 'mime-types';
 import * as path from 'path';
+import * as os from 'os';
+import { pipeline } from 'stream/promises';
+import { createWriteStream } from 'fs';
+import { Readable } from 'stream';
 
 export interface MediaFile {
   url: string;
@@ -194,6 +198,34 @@ export class StorageService {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Resolve a stored URL to a local file path readable by ffmpeg.
+   * For local storage: extracts the filename and returns the uploads/ path.
+   * For S3: downloads to a temp file and returns that path.
+   * Caller is responsible for deleting the temp file if `isTmp` is true.
+   */
+  async getReadablePath(url: string): Promise<{ filePath: string; isTmp: boolean }> {
+    if (this.provider !== 's3') {
+      // Local — file lives at uploads/{filename}
+      const filename = path.basename(new URL(url).pathname);
+      return { filePath: path.join('uploads', filename), isTmp: false };
+    }
+
+    // S3 — download to temp file
+    const ext = path.extname(new URL(url).pathname) || '.mp4';
+    const tmpPath = path.join(os.tmpdir(), `euphoria_${Date.now()}${ext}`);
+
+    const publicBase = this.publicUrl.replace(/\/$/, '');
+    const key = url.startsWith(publicBase) ? url.slice(publicBase.length + 1) : url;
+
+    if (!this.s3) throw new Error('S3 client not initialised');
+    const command = new GetObjectCommand({ Bucket: this.bucket, Key: key });
+    const response = await this.s3.send(command);
+    await pipeline(response.Body as Readable, createWriteStream(tmpPath));
+
+    return { filePath: tmpPath, isTmp: true };
   }
 
   private async uploadToS3(localPath: string, filename: string): Promise<string> {
