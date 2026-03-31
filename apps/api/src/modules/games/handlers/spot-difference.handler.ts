@@ -65,13 +65,14 @@ export class SpotDifferenceHandler extends BaseGameHandler {
   readonly type = 'spot_difference';
 
   buildClientPayload(config: Record<string, unknown>): Record<string, unknown> {
-    const sd = config['spotDifference'] as InlineSpotDifference | undefined;
+    const sd = config['spotDifference'] as (InlineSpotDifference & { imageAspectRatio?: number }) | undefined;
     if (!sd) return {};
     return {
       imageA: sd.imageA,
       imageB: sd.imageB,
+      differences: sd.differences,
       findCount: sd.findCount ?? 1,
-      // differences NOT included — client must discover them by tapping
+      ...(sd.imageAspectRatio !== undefined ? { imageAspectRatio: sd.imageAspectRatio } : {}),
     };
   }
 
@@ -79,7 +80,7 @@ export class SpotDifferenceHandler extends BaseGameHandler {
     config: Record<string, unknown>,
     { showId, roundIndex, timeLimitMs }: { showId: string; roundIndex: number; timeLimitMs: number },
   ): Record<string, unknown> {
-    const sd = config['spotDifference'] as InlineSpotDifference | undefined;
+    const sd = config['spotDifference'] as (InlineSpotDifference & { imageAspectRatio?: number }) | undefined;
     if (!sd) return {};
     return {
       showId,
@@ -87,7 +88,9 @@ export class SpotDifferenceHandler extends BaseGameHandler {
       timeLimitMs,
       imageA: sd.imageA,
       imageB: sd.imageB,
+      differences: sd.differences,       // client needs these for hit detection
       findCount: sd.findCount ?? 1,
+      ...(sd.imageAspectRatio !== undefined ? { imageAspectRatio: sd.imageAspectRatio } : {}),
     };
   }
 

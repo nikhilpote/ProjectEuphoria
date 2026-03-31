@@ -25,6 +25,7 @@ const DEFAULT_VIDEO_DURATION = 300;
 const GAME_TYPES = [
   'trivia',
   'quick_math',
+  'spot_difference',
   'fruit_cutting',
   'knife_at_center',
   'spelling_bee',
@@ -35,6 +36,7 @@ const GAME_TYPES = [
 const GAME_TYPE_LABELS: Record<string, string> = {
   trivia: 'Trivia',
   quick_math: 'Quick Math',
+  spot_difference: 'Spot the Difference',
   fruit_cutting: 'Fruit Cutting',
   knife_at_center: 'Knife at Center',
   spelling_bee: 'Spelling Bee',
@@ -45,6 +47,7 @@ const GAME_TYPE_LABELS: Record<string, string> = {
 const GAME_TYPE_SHORT: Record<string, string> = {
   trivia: 'TRV',
   quick_math: 'QM',
+  spot_difference: 'SPD',
   fruit_cutting: 'FC',
   knife_at_center: 'KC',
   spelling_bee: 'SB',
@@ -141,6 +144,8 @@ function defaultConfig(gameType: string): Record<string, unknown> {
     return {
       quickMath: { expression: '', options: ['', '', '', ''], correctIndex: 0 },
     };
+  if (gameType === 'spot_difference')
+    return { spotDifference: { levelId: '', findCount: 1 } };
   return {};
 }
 
@@ -200,10 +205,11 @@ const GAME_TEMPLATE = [
     gameType: 'spot_difference',
     config: {
       spotDifference: {
-        levelId: 'beach-scene',
+        levelId: '',
+        findCount: 1,
       },
     },
-    timeLimitMs: 20000,
+    timeLimitMs: 30000,
   },
 ];
 
@@ -449,6 +455,83 @@ function QuickMathConfigForm({
   );
 }
 
+// ─── Spot Difference config form ──────────────────────────────────────────────
+
+interface SpotDiffLevel { id: string; name: string; config: Record<string, unknown>; }
+interface SpotDiffConfigData { levelId: string; findCount: number; }
+
+const BASE_URL_SD = `${import.meta.env.VITE_API_URL ?? ''}/api/v1`;
+
+function SpotDifferenceConfigForm({
+  config,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  onChange: (c: Record<string, unknown>) => void;
+}) {
+  const sd = (config['spotDifference'] as SpotDiffConfigData | undefined) ?? { levelId: '', findCount: 1 };
+  const [levels, setLevels] = useState<SpotDiffLevel[]>([]);
+
+  useEffect(() => {
+    fetch(`${BASE_URL_SD}/admin/games/spot_difference/levels`)
+      .then((r) => r.json())
+      .then((body: { success: boolean; data: SpotDiffLevel[] } | SpotDiffLevel[]) => {
+        const arr = Array.isArray(body) ? body : (body as { data: SpotDiffLevel[] }).data ?? [];
+        setLevels(arr);
+      })
+      .catch(() => {});
+  }, []);
+
+  const update = (patch: Partial<SpotDiffConfigData>) =>
+    onChange({ spotDifference: { ...sd, ...patch } });
+
+  const selectedLevel = levels.find((l) => l.name === sd.levelId);
+  const maxDiffs = selectedLevel
+    ? (() => { try { return (JSON.parse(selectedLevel.config['differences'] as string ?? '[]') as unknown[]).length; } catch { return 0; } })()
+    : 0;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+          Level
+        </label>
+        <select
+          value={sd.levelId}
+          onChange={(e) => update({ levelId: e.target.value })}
+          className="w-full px-3 py-2 rounded-lg bg-[#0A0A14] border border-[#2A2A4A] text-sm text-gray-100 focus:outline-none focus:border-[#7C3AED] transition-colors"
+        >
+          <option value="">— select a level —</option>
+          {levels.map((l) => (
+            <option key={l.id} value={l.name}>{l.name}</option>
+          ))}
+        </select>
+        {selectedLevel && maxDiffs > 0 && (
+          <p className="text-[10px] text-gray-600">{maxDiffs} difference{maxDiffs !== 1 ? 's' : ''} in this level</p>
+        )}
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+          Find Count <span className="text-gray-600 normal-case">(how many to find to pass)</span>
+        </label>
+        <input
+          type="number"
+          min={1}
+          max={maxDiffs > 0 ? maxDiffs : 99}
+          value={sd.findCount}
+          onChange={(e) => update({ findCount: Math.max(1, parseInt(e.target.value) || 1) })}
+          className="w-full px-3 py-2 rounded-lg bg-[#0A0A14] border border-[#2A2A4A] text-sm text-gray-100 focus:outline-none focus:border-[#7C3AED] transition-colors"
+        />
+        {maxDiffs > 0 && (
+          <p className="text-[10px] text-gray-600">
+            Must find {sd.findCount} of {maxDiffs} differences to be correct
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Marker card ──────────────────────────────────────────────────────────────
 
 function MarkerCard({
@@ -495,6 +578,11 @@ function MarkerCard({
     if (marker.gameType === 'quick_math') {
       return (
         <QuickMathConfigForm config={marker.config} onChange={(c) => onUpdate({ config: c })} />
+      );
+    }
+    if (marker.gameType === 'spot_difference') {
+      return (
+        <SpotDifferenceConfigForm config={marker.config} onChange={(c) => onUpdate({ config: c })} />
       );
     }
     return (

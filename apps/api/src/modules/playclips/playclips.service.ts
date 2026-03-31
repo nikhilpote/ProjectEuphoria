@@ -87,7 +87,10 @@ export class PlayClipsService {
     // spot_difference: validate taps server-side against stored level differences
     let correct: boolean;
     if (clip.game_type === 'spot_difference') {
-      const levelId = config['levelId'] as string | undefined;
+      // config may be nested { spotDifference: { levelId, findCount } } or flat { levelId, findCount }
+      const sd = (config['spotDifference'] ?? config) as Record<string, unknown>;
+      const levelId = sd['levelId'] as string | undefined;
+      const configFindCount = sd['findCount'] as number | undefined;
       const submitted = answer as { taps?: Array<{ x: number; y: number }> } | null;
       if (!levelId || !submitted?.taps?.length) {
         correct = false;
@@ -97,7 +100,7 @@ export class PlayClipsService {
           correct = false;
         } else {
           const diffs = JSON.parse((level.config['differences'] as string | undefined) ?? '[]') as Array<{ x: number; y: number; radius: number }>;
-          const findCount = (level.config['findCount'] as number | undefined) ?? 1;
+          const findCount = configFindCount ?? (level.config['findCount'] as number | undefined) ?? 1;
           const aspectRatio = (level.config['imageAspectRatio'] as number | undefined) ?? 1;
           correct = validateSpotDifferenceTaps(diffs, findCount, submitted.taps, aspectRatio);
         }
@@ -147,10 +150,11 @@ export class PlayClipsService {
     if (!clip) return null;
     const servedAt = Date.now();
     const session = await this.playClipsRepository.createSession(userId, clip.id, servedAt);
+    const config = (clip.config ?? {}) as Record<string, unknown>;
     return {
       session,
       gameType: clip.game_type,
-      config: (clip.config ?? {}) as Record<string, unknown>,
+      config,
       timeLimitMs: (config['timeLimitMs'] as number | undefined) ?? (clip.clip_end_ms - clip.clip_start_ms - clip.game_offset_ms),
       gameOffsetMs: clip.game_offset_ms,
       mediaUrl: clip.media_url,

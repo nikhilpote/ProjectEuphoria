@@ -182,6 +182,7 @@ export class StorageService {
       for (const filename of files) {
         const ext = path.extname(filename).toLowerCase();
         if (!VIDEO_EXTS.has(ext)) continue;
+        if (filename.startsWith('clip_')) continue; // extracted PlayClip videos — excluded from media library
 
         const stat = await fs.stat(path.join(dir, filename)).catch(() => null);
         if (!stat) continue;
@@ -326,11 +327,23 @@ export class StorageService {
     }
   }
 
-  private async uploadToS3(localPath: string, filename: string): Promise<string> {
+  /**
+   * Upload an extracted PlayClip video to the clips/ prefix (separate from media/).
+   * clips/ is never listed in the media library shown in the admin video picker.
+   */
+  async uploadClip(localPath: string, filename: string): Promise<string> {
+    if (this.provider === 's3') {
+      return this.uploadToS3(localPath, filename, 'clips');
+    }
+    // Local: file is already on disk in uploads/, return URL with clip_ prefix intact
+    return `${this.localApiHost}/uploads/${filename}`;
+  }
+
+  private async uploadToS3(localPath: string, filename: string, folder: string = 'media'): Promise<string> {
     if (!this.s3) throw new Error('S3 client not initialised');
 
     const mimeType = mimeLookup(filename) || 'application/octet-stream';
-    const key = `media/${filename}`;
+    const key = `${folder}/${filename}`;
 
     const fileBuffer = await fs.readFile(localPath);
 

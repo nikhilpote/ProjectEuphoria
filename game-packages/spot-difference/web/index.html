@@ -222,7 +222,7 @@
   </style>
 </head>
 <body>
-  <div id="loading"><div class="spinner"></div></div>
+  <div id="loading"><div class="spinner"></div><p id="load-status" style="color:#9CA3AF;font-size:12px;margin-top:12px">Waiting for game data…</p></div>
 
   <div id="root">
     <!-- HUD -->
@@ -309,14 +309,19 @@ function postToNative(msg) {
 window.addEventListener('message', (e) => {
   try {
     const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+    if (msg.type === '__CONSOLE__') return; // ignore console mirror messages
+    console.log('[SD] message received type=' + (msg && msg.type));
     if (msg.type === 'GAME_INIT' && msg.payload) initGame(msg.payload);
-  } catch {}
+  } catch (err) { console.error('[SD] message handler error', err); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Init
 // ─────────────────────────────────────────────────────────────────────────────
 async function initGame(payload) {
+  var $status = document.getElementById('load-status');
+  if ($status) $status.textContent = 'initGame called, resolving config…';
+  console.log('[SD] initGame called imageA=' + (payload.imageA || payload.spotDifference?.imageA || 'none'));
   timeLimitMs = Number(payload.timeLimitMs ?? 20000);
 
   let raw = payload.spotDifference ?? payload;
@@ -342,19 +347,40 @@ async function initGame(payload) {
     }
   }
 
+  const imageA = raw.imageA ?? raw.image_a ?? '';
+  const imageB = raw.imageB ?? raw.image_b ?? '';
+
+  if (!imageA || !imageB) {
+    $loading.querySelector('.spinner').style.display = 'none';
+    const msg = document.createElement('p');
+    msg.style.cssText = 'color:#EF4444;font-size:14px;text-align:center;padding:24px';
+    msg.textContent = 'Level images not configured. Please upload images for this level.';
+    $loading.appendChild(msg);
+    return;
+  }
+
   config = {
-    imageA:      raw.imageA ?? raw.image_a ?? '',
-    imageB:      raw.imageB ?? raw.image_b ?? '',
+    imageA,
+    imageB,
     differences: parseDifferences(raw.differences),
     findCount:   Number(raw.findCount ?? raw.find_count ?? 1),
   };
 
+  if ($status) $status.textContent = 'Loading images from S3…';
   loadImages(config.imageA, config.imageB).then(() => {
+    console.log('[SD] images loaded OK, sizing canvases');
     sizeCanvases();
     drawImages();
     $loading.classList.add('hidden');
     postToNative({ type: 'GAME_READY', payload: { gameType: 'spot_difference' } });
     startTimer();
+  }).catch((err) => {
+    console.error('Image load failed:', err);
+    $loading.querySelector('.spinner').style.display = 'none';
+    const msg = document.createElement('p');
+    msg.style.cssText = 'color:#EF4444;font-size:14px;text-align:center;padding:24px';
+    msg.textContent = 'Failed to load images. Check that image URLs are accessible.';
+    $loading.appendChild(msg);
   });
 }
 
@@ -370,7 +396,6 @@ function parseDifferences(raw) {
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
     img.onload  = () => resolve(img);
     img.onerror = () => reject(new Error(`Failed to load: ${src}`));
     img.src = src;
@@ -648,7 +673,7 @@ function timeUp() {
 function showBanner(success) {
   $bIcon.textContent  = success ? '✓' : '✗';
   $bIcon.className    = success ? 'success' : 'fail';
-  $bTitle.textContent = success ? 'Found it!' : 'Time's up!';
+  $bTitle.textContent = success ? 'Found it!' : "Time's up!";
   $bTitle.className   = success ? 'success' : 'fail';
   $bSub.textContent   = success
     ? 'Great eye!'
@@ -664,6 +689,45 @@ window.addEventListener('resize', () => {
   sizeCanvases();
   drawImages();
 });
+
+// Auto-init: try every possible path to receive game data
+(function autoInit() {
+  var $s = document.getElementById('load-status');
+  function go(g) {
+    initGame(g.payload ? Object.assign({}, g.payload, { timeLimitMs: g.timeLimitMs }) : g);
+  }
+
+  // Path 1 (most reliable): data encoded in URL hash by GameWebViewBridge
+  if (location.hash && location.hash.length > 1) {
+    try {
+      if ($s) $s.textContent = 'Reading data from URL…';
+      var hashData = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+      go(hashData);
+      return;
+    } catch(e) {
+      if ($s) $s.textContent = 'Hash parse failed: ' + e.message;
+    }
+  }
+
+  // Path 2: pre-injected global (injectedJavaScriptBeforeContentLoaded)
+  if (window.__EUPHORIA_GAME__) {
+    if ($s) $s.textContent = 'Reading from __EUPHORIA_GAME__…';
+    go(window.__EUPHORIA_GAME__);
+    return;
+  }
+
+  // Path 3: poll for the global (in case injection is delayed)
+  var attempts = 0;
+  var poll = setInterval(function() {
+    attempts++;
+    if ($s) $s.textContent = 'Waiting for game data… (attempt ' + attempts + ')';
+    if (window.__EUPHORIA_GAME__) {
+      clearInterval(poll);
+      go(window.__EUPHORIA_GAME__);
+    }
+    if (attempts > 50) clearInterval(poll);
+  }, 100);
+})();
 </script>
 </body>
 </html>

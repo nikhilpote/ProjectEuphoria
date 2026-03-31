@@ -108,23 +108,31 @@ font-family: 'SF Mono', 'Roboto Mono', monospace;
 
 ### Receiving data from the native app
 
-The native app delivers game data in two ways. You must handle **both**:
+The native app delivers game data through **three channels**. Your game must handle all of them — place this bootstrap at the **end** of your `<script>` block:
 
-**Method 1 — Pre-injection (fastest, happens before DOM ready):**
 ```javascript
-if (window.__EUPHORIA_GAME__) {
-  init(window.__EUPHORIA_GAME__);
-}
-```
-
-**Method 2 — postMessage (fallback, also used for dev testing):**
-```javascript
-window.addEventListener('message', function(event) {
-  let msg;
-  try { msg = JSON.parse(event.data); } catch { return; }
+// ── Message listener (dev testing + fallback) ───────────────────────────
+window.addEventListener('message', function(e) {
+  var msg;
+  try { msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch { return; }
   if (msg.type === 'GAME_INIT') init(msg.payload);
 });
+
+// ── Auto-init: URL hash (primary) → global (fallback) ──────────────────
+(function() {
+  function go(g) {
+    init(g.payload ? Object.assign({}, g.payload, { timeLimitMs: g.timeLimitMs }) : g);
+  }
+  // Path 1: data encoded in URL hash by the native bridge
+  if (location.hash && location.hash.length > 1) {
+    try { go(JSON.parse(decodeURIComponent(location.hash.slice(1)))); return; } catch(e) {}
+  }
+  // Path 2: pre-injected global (set before page content loads)
+  if (window.__EUPHORIA_GAME__) { go(window.__EUPHORIA_GAME__); }
+})();
 ```
+
+> **Why three channels?** Different WebView implementations handle JS injection differently. The URL hash is the most reliable (data travels with the URL itself). The `__EUPHORIA_GAME__` global is set via `injectedJavaScriptBeforeContentLoaded`. The message listener handles dev testing and edge cases. All three resolve to the same `init(payload)` call.
 
 ### `GAME_INIT` payload shape
 
@@ -311,13 +319,22 @@ Copy this as your starting point:
     }
   }
 
+  // ── Bootstrap (copy this exactly — handles all WebView data channels) ──
   window.addEventListener('message', function(e) {
-    let msg;
+    var msg;
     try { msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch { return; }
     if (msg.type === 'GAME_INIT') init(msg.payload);
   });
 
-  if (window.__EUPHORIA_GAME__) init(window.__EUPHORIA_GAME__);
+  (function() {
+    function go(g) {
+      init(g.payload ? Object.assign({}, g.payload, { timeLimitMs: g.timeLimitMs }) : g);
+    }
+    if (location.hash && location.hash.length > 1) {
+      try { go(JSON.parse(decodeURIComponent(location.hash.slice(1)))); return; } catch(e) {}
+    }
+    if (window.__EUPHORIA_GAME__) { go(window.__EUPHORIA_GAME__); }
+  })();
 </script>
 </body>
 </html>
@@ -350,6 +367,52 @@ window.dispatchEvent(new MessageEvent('message', {
 To simulate the native `postMessage` listener, add this before testing:
 ```javascript
 window.ReactNativeWebView = { postMessage: (msg) => console.log('→ Native:', JSON.parse(msg)) };
+```
+
+---
+
+## Pre-Upload Validation (REQUIRED)
+
+**Every game must pass JS syntax validation before uploading.** A single syntax error in your `<script>` block silently kills all JavaScript — the HTML renders (spinner shows) but no game logic runs. The WebView gives zero error feedback, making this extremely hard to debug.
+
+### Run this before every upload:
+
+```bash
+# Extract inline JS and validate with Node
+sed -n '/<script>/,/<\/script>/p' web/index.html | sed '1d;$d' > /tmp/check.js && node --check /tmp/check.js
+```
+
+If it prints nothing, you're good. If it prints a `SyntaxError`, fix it before uploading.
+
+### Common pitfalls that cause silent failures:
+
+| Bug | Example | Fix |
+|---|---|---|
+| **Apostrophe in single-quoted string** | `'Time's up!'` | Use double quotes: `"Time's up!"` |
+| **Template literal in old WebView** | `` `Score: ${x}` `` | Use concatenation: `'Score: ' + x` |
+| **Trailing comma in array/object** | `[1, 2, 3,]` | Remove trailing comma: `[1, 2, 3]` |
+| **`const`/`let` in strict mode edge cases** | Redeclaring in switch | Use `var` for maximum compatibility |
+| **Optional chaining `?.`** | `obj?.prop` | Use `obj && obj.prop` for older WebViews |
+| **Nullish coalescing `??`** | `x ?? 0` | Use `x != null ? x : 0` |
+
+> **Why not use `try/catch`?** A syntax error prevents the JS engine from *parsing* the script at all. `try/catch` only handles *runtime* errors. If the script can't parse, nothing inside it executes — not even error handlers.
+
+### Full upload workflow:
+
+```bash
+cd game-packages/your-game/
+
+# 1. Validate JS syntax
+sed -n '/<script>/,/<\/script>/p' web/index.html | sed '1d;$d' > /tmp/check.js \
+  && node --check /tmp/check.js \
+  && echo "✓ JS OK" || { echo "✗ FIX SYNTAX ERRORS"; exit 1; }
+
+# 2. Check bundle size
+gzip -c web/index.html | wc -c   # must be ≤ 150 KB
+
+# 3. Zip and upload
+cd .. && zip -r your-game.zip your-game/
+curl -X POST http://localhost:3000/api/v1/admin/games/upload -F "file=@your-game.zip"
 ```
 
 ---

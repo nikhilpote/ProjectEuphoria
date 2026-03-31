@@ -327,12 +327,16 @@
     }
   });
 
-  // ── Bootstrap: read pre-injected data if available ────────────────────────
-  if (window.__EUPHORIA_GAME__) {
-    init(window.__EUPHORIA_GAME__.payload
-      ? { ...window.__EUPHORIA_GAME__.payload, timeLimitMs: window.__EUPHORIA_GAME__.timeLimitMs }
-      : window.__EUPHORIA_GAME__);
-  }
+  // ── Bootstrap: URL hash (primary) → __EUPHORIA_GAME__ global (fallback) ──
+  (function() {
+    function go(g) {
+      init(g.payload ? Object.assign({}, g.payload, { timeLimitMs: g.timeLimitMs }) : g);
+    }
+    if (location.hash && location.hash.length > 1) {
+      try { go(JSON.parse(decodeURIComponent(location.hash.slice(1)))); return; } catch(e) {}
+    }
+    if (window.__EUPHORIA_GAME__) { go(window.__EUPHORIA_GAME__); }
+  })();
 </script>
 </body>
 </html>

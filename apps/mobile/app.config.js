@@ -8,7 +8,7 @@
  */
 
 const IS_PROD = process.env.APP_ENV === 'production';
-const API_URL = process.env.API_URL ?? 'http://172.20.10.3:3000';
+const API_URL = process.env.API_URL ?? 'http://192.168.0.121:3000';
 
 module.exports = {
   expo: {

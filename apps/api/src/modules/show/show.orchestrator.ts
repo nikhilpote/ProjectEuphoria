@@ -188,9 +188,37 @@ export class ShowOrchestrator {
             this.logger.error(`roundDeadline set error show=${showId} round=${i}: ${err.message}`),
           );
 
+        // For spot_difference: resolve the level so imageA/imageB/differences are
+        // available to buildQuestionEvent (the config only stores levelId).
+        let questionConfig = marker.config;
+        if (marker.gameType === 'spot_difference') {
+          const sd = (marker.config['spotDifference'] ?? marker.config) as Record<string, unknown>;
+          const levelId = sd['levelId'] as string | undefined;
+          if (levelId) {
+            const level = await this.gamePackagesService.getLevelCached('spot_difference', levelId);
+            if (level) {
+              const resolvedFindCount = (sd['findCount'] as number | undefined)
+                ?? (level.config['findCount'] as number | undefined) ?? 1;
+              questionConfig = {
+                ...marker.config,
+                spotDifference: {
+                  ...sd,
+                  imageA: level.config['imageA'],
+                  imageB: level.config['imageB'],
+                  differences: level.config['differences'],
+                  findCount: resolvedFindCount,
+                  imageAspectRatio: level.config['imageAspectRatio'],
+                },
+              };
+            } else {
+              this.logger.warn(`spot_difference level "${levelId}" not found — round ${i} will have no images`);
+            }
+          }
+        }
+
         const questionEvent = this.gameRegistry.buildQuestionEvent(
           marker.gameType,
-          marker.config,
+          questionConfig,
           { showId, roundIndex: i, timeLimitMs: marker.duration * 1000 },
         );
         if (questionEvent && Object.keys(questionEvent).length > 0) {
@@ -325,10 +353,12 @@ export class ShowOrchestrator {
       if (levelId) {
         const level = await this.gamePackagesService.getLevelCached('spot_difference', levelId);
         if (level) {
+          // findCount: show config overrides level default (admin can set "find 2 of 5" per round)
+          const configFindCount = sd['findCount'] as number | undefined;
           evalConfig = {
             ...marker.config,
             _resolvedDifferences: level.config['differences'] as string,
-            _resolvedFindCount: (level.config['findCount'] as number | undefined) ?? 1,
+            _resolvedFindCount: configFindCount ?? (level.config['findCount'] as number | undefined) ?? 1,
             _resolvedAspectRatio: (level.config['imageAspectRatio'] as number | undefined) ?? 1,
           };
         } else {

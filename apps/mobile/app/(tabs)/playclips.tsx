@@ -229,6 +229,15 @@ export default function PlayClipsScreen() {
   // round_question → shrink video to PiP, show game
   useEffect(() => {
     if (!roundQuestion) return;
+    console.log('[PlayClips] round_question received:', JSON.stringify({
+      gameType: roundQuestion.gameType,
+      timeLimitMs: roundQuestion.timeLimitMs,
+      payloadKeys: Object.keys(roundQuestion.gamePayload ?? {}),
+      imageA: (roundQuestion.gamePayload as Record<string, unknown>)?.imageA,
+      imageB: (roundQuestion.gamePayload as Record<string, unknown>)?.imageB,
+      differences: (roundQuestion.gamePayload as Record<string, unknown>)?.differences,
+      findCount: (roundQuestion.gamePayload as Record<string, unknown>)?.findCount,
+    }));
     setGameActive(true);
     animatePip(true);
   }, [roundQuestion]);

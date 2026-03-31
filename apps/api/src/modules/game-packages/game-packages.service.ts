@@ -16,6 +16,7 @@ const GAME_PACKAGES_CACHE_KEY = 'game_packages:enabled';
 const LEVEL_CACHE_TTL_S = 600;
 const levelCacheKey = (packageId: string, name: string) =>
   `game_level:${packageId}:${name}`;
+const levelIdCacheKey = (id: string) => `game_level_id:${id}`;
 
 @Injectable()
 export class GamePackagesService {
@@ -100,15 +101,12 @@ export class GamePackagesService {
       this.logger.warn(`Failed to delete temp ZIP ${zipLocalPath}: ${err.message}`),
     );
 
-    // Upsert: if package with this id already exists, delete it first
-    // Preserve is_enabled so re-uploading an active game stays active
+    // Upsert: update existing row if present — preserves is_enabled and cascade-linked levels.
+    // Never DELETE the package row on re-upload; levels are linked via FK and would be wiped.
     const existing = await this.repository.findById(manifest.id);
-    const wasEnabled = existing?.is_enabled ?? false;
-    if (existing) {
-      await this.repository.delete(manifest.id);
-    }
+    const isEnabled = existing?.is_enabled ?? false;
 
-    const row = await this.repository.create({
+    const row = await this.repository.upsert({
       id: manifest.id,
       name: manifest.name,
       version: manifest.version,
@@ -116,12 +114,9 @@ export class GamePackagesService {
       manifest,
       bundleUrl,
       thumbnailUrl,
+      isEnabled,
     });
 
-    // Restore enabled state and always invalidate cache so clients get new bundleUrl immediately
-    if (wasEnabled) {
-      await this.repository.setEnabled(manifest.id, true);
-    }
     await this.invalidateEnabledCache();
 
     this.logger.log(`Game package uploaded: id=${manifest.id} version=${manifest.version}`);
@@ -199,6 +194,23 @@ export class GamePackagesService {
     return dto;
   }
 
+  /**
+   * Fetch a single level by UUID with Redis caching.
+   * This is the preferred lookup when configs store level.id (UUID).
+   */
+  async getLevelCachedById(levelId: string): Promise<GameLevel | null> {
+    const key = levelIdCacheKey(levelId);
+    const cached = await this.redis.get(key);
+    if (cached) return JSON.parse(cached) as GameLevel;
+
+    const row = await this.repository.findLevelById(levelId);
+    if (!row) return null;
+
+    const dto = this.levelToDto(row);
+    await this.redis.set(key, JSON.stringify(dto), 'EX', LEVEL_CACHE_TTL_S);
+    return dto;
+  }
+
   private async invalidateLevelCache(gamePackageId: string, name: string): Promise<void> {
     await this.redis.del(levelCacheKey(gamePackageId, name));
   }
@@ -228,11 +240,12 @@ export class GamePackagesService {
 
   async updateLevel(gamePackageId: string, levelId: string, patch: { name?: string; config?: Record<string, unknown> }): Promise<GameLevel> {
     const row = await this.repository.updateLevel(levelId, patch);
-    // Invalidate both old name (if renamed) and new name
+    // Invalidate both old name (if renamed) and new name, plus ID-based cache
     await this.invalidateLevelCache(gamePackageId, row.name);
     if (patch.name && patch.name !== row.name) {
       await this.invalidateLevelCache(gamePackageId, patch.name);
     }
+    await this.redis.del(levelIdCacheKey(levelId));
     return this.levelToDto(row);
   }
 
@@ -242,6 +255,7 @@ export class GamePackagesService {
     const target = rows.find((r) => r.id === levelId);
     await this.repository.deleteLevel(levelId);
     if (target) await this.invalidateLevelCache(gamePackageId, target.name);
+    await this.redis.del(levelIdCacheKey(levelId));
   }
 
   private levelToDto(row: GameLevelRow): GameLevel {

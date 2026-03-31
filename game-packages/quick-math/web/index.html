@@ -169,10 +169,16 @@
     } catch {}
   });
 
-  if (window.__EUPHORIA_GAME__) {
-    const g = window.__EUPHORIA_GAME__;
-    init(g.payload ? { ...g.payload, timeLimitMs: g.timeLimitMs } : g);
-  }
+  // URL hash (primary) → __EUPHORIA_GAME__ global (fallback)
+  (function() {
+    function go(g) {
+      init(g.payload ? Object.assign({}, g.payload, { timeLimitMs: g.timeLimitMs }) : g);
+    }
+    if (location.hash && location.hash.length > 1) {
+      try { go(JSON.parse(decodeURIComponent(location.hash.slice(1)))); return; } catch(e) {}
+    }
+    if (window.__EUPHORIA_GAME__) { go(window.__EUPHORIA_GAME__); }
+  })();
 </script>
 </body>
 </html>

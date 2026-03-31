@@ -75,6 +75,43 @@ export class GamePackagesRepository {
     await this.db.deleteFrom('game_packages').where('id', '=', id).execute();
   }
 
+  upsert(data: {
+    id: string;
+    name: string;
+    version: string;
+    description: string | null;
+    manifest: object;
+    bundleUrl: string;
+    thumbnailUrl: string | null;
+    isEnabled: boolean;
+  }): Promise<GamePackageRow> {
+    return this.db
+      .insertInto('game_packages')
+      .values({
+        id: data.id,
+        name: data.name,
+        version: data.version,
+        description: data.description,
+        is_enabled: data.isEnabled,
+        manifest: JSON.stringify(data.manifest),
+        bundle_url: data.bundleUrl,
+        thumbnail_url: data.thumbnailUrl,
+      })
+      .onConflict((oc) =>
+        oc.column('id').doUpdateSet({
+          name: data.name,
+          version: data.version,
+          description: data.description,
+          manifest: JSON.stringify(data.manifest),
+          bundle_url: data.bundleUrl,
+          thumbnail_url: data.thumbnailUrl,
+          updated_at: new Date(),
+        }),
+      )
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
   // ── Level CRUD ────────────────────────────────────────────────────────────
 
   findLevelsByPackage(gamePackageId: string): Promise<GameLevelRow[]> {
@@ -92,6 +129,15 @@ export class GamePackagesRepository {
       .selectAll()
       .where('game_package_id', '=', gamePackageId)
       .where('name', '=', name)
+      .executeTakeFirst();
+    return row ?? null;
+  }
+
+  async findLevelById(id: string): Promise<GameLevelRow | null> {
+    const row = await this.db
+      .selectFrom('game_levels')
+      .selectAll()
+      .where('id', '=', id)
       .executeTakeFirst();
     return row ?? null;
   }

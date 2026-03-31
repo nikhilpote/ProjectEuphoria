@@ -180,7 +180,7 @@ export class AdminService {
 
         try {
           await this.transcodeService.extractClip(videoPath, range.startMs, range.endMs, tmpOut);
-          const mediaUrl = await this.storageService.upload(tmpOut, clipFilename);
+          const mediaUrl = await this.storageService.uploadClip(tmpOut, clipFilename);
 
           await this.playClipsRepository.createClip({
             showId,

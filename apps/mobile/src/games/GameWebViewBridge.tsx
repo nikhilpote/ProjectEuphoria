@@ -4,7 +4,7 @@
 import React, { useRef, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
-import type { WebViewMessageEvent } from 'react-native-webview';
+import type { WebViewMessageEvent, WebViewErrorEvent } from 'react-native-webview';
 import type { GameAnswer } from '@euphoria/types';
 
 export interface GameWebViewBridgeProps {
@@ -25,16 +25,23 @@ export function GameWebViewBridge({
   const webViewRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
 
-  // Injected before page content loads so the game can read it synchronously
+  // Encode payload into URL hash so the game can read it from location.hash
+  // without relying on injectedJS or message events (which fail on some WebViews).
+  const gameData = JSON.stringify({ payload, timeLimitMs });
+  const sourceUrlRef = useRef(bundleUrl + '#' + encodeURIComponent(gameData));
+
+  // Injected before page content loads — sets global + console forwarding.
+  // This is a best-effort fallback; the URL hash is the primary data channel.
   const injectedJS = `
     window.__EUPHORIA_GAME__ = ${JSON.stringify({ payload, timeLimitMs })};
     true;
   `;
 
   const handleLoadEnd = () => {
-    // Dispatch GAME_INIT after the page is ready so frameworks that register
-    // message listeners in DOMContentLoaded/useEffect can receive it
+    console.log('[GameWebViewBridge] onLoadEnd fired');
+    // Also try setting the global via injectJavaScript as another fallback
     webViewRef.current?.injectJavaScript(`
+      window.__EUPHORIA_GAME__ = ${JSON.stringify({ payload, timeLimitMs })};
       window.dispatchEvent(new MessageEvent('message', {
         data: JSON.stringify({ type: 'GAME_INIT', payload: ${JSON.stringify({ ...payload, timeLimitMs })} })
       }));
@@ -45,7 +52,15 @@ export function GameWebViewBridge({
 
   const handleMessage = (event: WebViewMessageEvent) => {
     try {
-      const msg = JSON.parse(event.nativeEvent.data) as { type: string; payload?: unknown };
+      const msg = JSON.parse(event.nativeEvent.data) as { type: string; level?: string; msg?: string; payload?: unknown };
+
+      if (msg.type === '__CONSOLE__') {
+        const prefix = `[WebView:${msg.level}]`;
+        if (msg.level === 'error') console.error(prefix, msg.msg);
+        else if (msg.level === 'warn') console.warn(prefix, msg.msg);
+        else console.log(prefix, msg.msg);
+        return;
+      }
 
       if (msg.type === 'READY') {
         setLoading(false);
@@ -60,16 +75,22 @@ export function GameWebViewBridge({
     }
   };
 
+  const handleError = (e: WebViewErrorEvent) => {
+    console.error('[GameWebViewBridge] WebView error:', e.nativeEvent.description, 'url=', e.nativeEvent.url);
+  };
+
   return (
     <View style={styles.container}>
       <WebView
         ref={webViewRef}
-        source={{ uri: bundleUrl }}
+        source={{ uri: sourceUrlRef.current }}
         injectedJavaScriptBeforeContentLoaded={injectedJS}
         onLoadEnd={handleLoadEnd}
         onMessage={handleMessage}
+        onError={handleError}
         javaScriptEnabled
         domStorageEnabled
+        cacheEnabled={false}
         scrollEnabled={false}
         bounces={false}
         style={styles.webView}

@@ -123,7 +123,32 @@ export class ClipsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       playCount,
     });
 
-    const gamePayload = this.gameRegistry.buildClientPayload(gameType, config);
+    // For spot_difference: resolve level to inject imageA/imageB/differences before building payload
+    let enrichedConfig = config;
+    if (gameType === 'spot_difference') {
+      const sd = (config['spotDifference'] ?? config) as Record<string, unknown>;
+      const levelId = sd['levelId'] as string | undefined;
+      if (levelId) {
+        const level = await this.gamePackagesService.getLevelCached('spot_difference', levelId);
+        if (level) {
+          const resolvedFindCount = (sd['findCount'] as number | undefined)
+            ?? (level.config['findCount'] as number | undefined) ?? 1;
+          enrichedConfig = {
+            ...config,
+            spotDifference: {
+              ...sd,
+              imageA: level.config['imageA'],
+              imageB: level.config['imageB'],
+              differences: level.config['differences'],
+              findCount: resolvedFindCount,
+              imageAspectRatio: level.config['imageAspectRatio'],
+            },
+          };
+        }
+      }
+    }
+
+    const gamePayload = this.gameRegistry.buildClientPayload(gameType, enrichedConfig);
 
     const timers = this.socketTimers.get(client.id)!;
 
