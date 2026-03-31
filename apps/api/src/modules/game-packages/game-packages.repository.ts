@@ -1,9 +1,10 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { Kysely, Selectable } from 'kysely';
-import { DB, GamePackagesTable } from '../../database/schema';
+import { DB, GamePackagesTable, GameLevelsTable } from '../../database/schema';
 import { KYSELY_TOKEN } from '../../database/database.module';
 
 export type GamePackageRow = Selectable<GamePackagesTable>;
+export type GameLevelRow = Selectable<GameLevelsTable>;
 
 @Injectable()
 export class GamePackagesRepository {
@@ -72,5 +73,62 @@ export class GamePackagesRepository {
 
   async delete(id: string): Promise<void> {
     await this.db.deleteFrom('game_packages').where('id', '=', id).execute();
+  }
+
+  // ── Level CRUD ────────────────────────────────────────────────────────────
+
+  findLevelsByPackage(gamePackageId: string): Promise<GameLevelRow[]> {
+    return this.db
+      .selectFrom('game_levels')
+      .selectAll()
+      .where('game_package_id', '=', gamePackageId)
+      .orderBy('created_at', 'asc')
+      .execute();
+  }
+
+  async findLevel(gamePackageId: string, name: string): Promise<GameLevelRow | null> {
+    const row = await this.db
+      .selectFrom('game_levels')
+      .selectAll()
+      .where('game_package_id', '=', gamePackageId)
+      .where('name', '=', name)
+      .executeTakeFirst();
+    return row ?? null;
+  }
+
+  createLevel(data: {
+    gamePackageId: string;
+    name: string;
+    config: Record<string, unknown>;
+  }): Promise<GameLevelRow> {
+    return this.db
+      .insertInto('game_levels')
+      .values({
+        game_package_id: data.gamePackageId,
+        name: data.name,
+        config: JSON.stringify(data.config),
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  updateLevel(id: string, data: {
+    name?: string;
+    config?: Record<string, unknown>;
+  }): Promise<GameLevelRow> {
+    return this.db
+      .updateTable('game_levels')
+      .set({
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.config !== undefined ? { config: JSON.stringify(data.config) } : {}),
+        updated_at: new Date(),
+      })
+      .where('id', '=', id)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  async deleteLevel(id: string): Promise<void> {
+    await this.db.deleteFrom('game_levels').where('id', '=', id).execute();
   }
 }

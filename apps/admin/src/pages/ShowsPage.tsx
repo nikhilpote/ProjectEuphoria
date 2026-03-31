@@ -8,6 +8,7 @@ import {
   getMediaLibrary,
   createShowClips,
   getShowClips,
+  deleteShowClip,
   type Show,
   type CreateShowInput,
   type MediaFile,
@@ -24,7 +25,6 @@ const DEFAULT_VIDEO_DURATION = 300;
 const GAME_TYPES = [
   'trivia',
   'quick_math',
-  'number_dash',
   'fruit_cutting',
   'knife_at_center',
   'spelling_bee',
@@ -35,7 +35,6 @@ const GAME_TYPES = [
 const GAME_TYPE_LABELS: Record<string, string> = {
   trivia: 'Trivia',
   quick_math: 'Quick Math',
-  number_dash: 'Number Dash',
   fruit_cutting: 'Fruit Cutting',
   knife_at_center: 'Knife at Center',
   spelling_bee: 'Spelling Bee',
@@ -46,7 +45,6 @@ const GAME_TYPE_LABELS: Record<string, string> = {
 const GAME_TYPE_SHORT: Record<string, string> = {
   trivia: 'TRV',
   quick_math: 'QM',
-  number_dash: 'ND',
   fruit_cutting: 'FC',
   knife_at_center: 'KC',
   spelling_bee: 'SB',
@@ -143,10 +141,6 @@ function defaultConfig(gameType: string): Record<string, unknown> {
     return {
       quickMath: { expression: '', options: ['', '', '', ''], correctIndex: 0 },
     };
-  if (gameType === 'number_dash')
-    return {
-      numberDash: { difficulty: 'medium', maxNumber: 15, cutoffScore: 30 },
-    };
   return {};
 }
 
@@ -203,12 +197,10 @@ const GAME_TEMPLATE = [
     },
   },
   {
-    gameType: 'number_dash',
+    gameType: 'spot_difference',
     config: {
-      numberDash: {
-        difficulty: 'medium',
-        maxNumber: 15,
-        cutoffScore: 180,
+      spotDifference: {
+        levelId: 'beach-scene',
       },
     },
     timeLimitMs: 20000,
@@ -1312,10 +1304,14 @@ function ShowEditorModal({ onClose, onSaved, onToast, editShow }: ShowEditorModa
     setSelectedClipId(newClip.id);
   }, [currentTime, videoDuration]);
 
-  const deleteClipRange = useCallback((id: string) => {
+  const deleteClipRange = useCallback(async (id: string) => {
+    const clip = clipRanges.find((c) => c.id === id);
+    if (clip?.saved && editShow?.id) {
+      await deleteShowClip(editShow.id, id).catch(() => {});
+    }
     setClipRanges((prev) => prev.filter((c) => c.id !== id));
     setSelectedClipId((cur) => (cur === id ? null : cur));
-  }, []);
+  }, [clipRanges, editShow?.id]);
 
   const handleSaveClips = async () => {
     if (savingClips || !editShow) return;

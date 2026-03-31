@@ -19,6 +19,34 @@ interface GamePackage {
   createdAt: string;
 }
 
+interface GameLevel {
+  id: string;
+  gamePackageId: string;
+  name: string;
+  config: {
+    imageA?: string;
+    imageB?: string;
+    differences?: string; // JSON string: [{x,y,radius}[]]
+    findCount?: number;
+    imageAspectRatio?: number;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface DiffMarker {
+  x: number;
+  y: number;
+  radius: number;
+}
+
+interface DrawRect {
+  dx: number;
+  dy: number;
+  dw: number;
+  dh: number;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const BASE_URL = `${import.meta.env.VITE_API_URL ?? ''}/api/v1`;
@@ -31,6 +59,28 @@ function formatDate(iso: string): string {
     day: 'numeric',
     year: 'numeric',
   });
+}
+
+function getDrawRect(cw: number, ch: number, iw: number, ih: number): DrawRect {
+  const ir = iw / ih;
+  const cr = cw / ch;
+  if (ir > cr) {
+    const dh = cw / ir;
+    return { dx: 0, dy: (ch - dh) / 2, dw: cw, dh };
+  }
+  const dw = ch * ir;
+  return { dx: (cw - dw) / 2, dy: 0, dw, dh: ch };
+}
+
+function parseDifferences(raw: string | undefined): DiffMarker[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed as DiffMarker[];
+  } catch {
+    return [];
+  }
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -117,6 +167,907 @@ function SkeletonCard() {
     </div>
   );
 }
+
+// ─── ImageUploadZone ──────────────────────────────────────────────────────────
+
+interface ImageUploadZoneProps {
+  uploaded: string;
+  uploading: boolean;
+  error: string;
+  onFile: (file: File) => void;
+  onClear: () => void;
+}
+
+function ImageUploadZone({ uploaded, uploading, error, onFile, onClear }: ImageUploadZoneProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  const handleFile = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    onFile(file);
+  };
+
+  if (uploading) {
+    return (
+      <div className="flex items-center justify-center gap-2 h-20 rounded-lg border border-euphoria-border bg-gray-900/40">
+        <Spinner />
+        <span className="text-xs text-gray-400">Uploading…</span>
+      </div>
+    );
+  }
+
+  if (uploaded) {
+    return (
+      <div className="flex items-center gap-2.5 p-2.5 rounded-lg border border-euphoria-border bg-gray-900/60">
+        <img
+          src={uploaded}
+          alt=""
+          className="h-12 w-12 rounded-md object-cover border border-gray-700 shrink-0"
+        />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-gray-300 font-medium truncate">Image uploaded</p>
+          <p className="text-[10px] text-gray-600 truncate">{uploaded.split('/').pop()}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-gray-500 hover:text-red-400 transition-colors shrink-0 text-base leading-none px-1"
+          title="Remove image"
+        >
+          ×
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div
+        onClick={() => inputRef.current?.click()}
+        onDragEnter={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          const file = e.dataTransfer.files[0];
+          if (file) handleFile(file);
+        }}
+        className={[
+          'flex flex-col items-center justify-center gap-1.5 h-20 rounded-lg border-2 border-dashed',
+          'cursor-pointer transition-all select-none',
+          dragOver
+            ? 'border-euphoria-purple bg-euphoria-purple/5'
+            : 'border-euphoria-border hover:border-euphoria-purple/40 hover:bg-white/[0.02]',
+        ].join(' ')}
+      >
+        <svg className="h-5 w-5 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 18h16.5M3 9.75h.008v.008H3V9.75z" />
+        </svg>
+        <p className="text-xs text-gray-500">Click or drag to upload</p>
+        <p className="text-[10px] text-gray-700">JPG · PNG · WEBP</p>
+      </div>
+      {error && <p className="text-red-400 text-[10px] mt-1">{error}</p>}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFile(file);
+          e.target.value = '';
+        }}
+      />
+    </div>
+  );
+}
+
+// ─── SpotDifferenceLevelsPanel ────────────────────────────────────────────────
+
+interface LevelEditorState {
+  levelId: string | null; // null = creating new
+  name: string;
+  imageAUrl: string;      // CDN URL after upload
+  imageBUrl: string;      // CDN URL after upload
+  imageBLoaded: string;   // set after img.onload — triggers canvas
+  uploadingA: boolean;
+  uploadingB: boolean;
+  uploadErrorA: string;
+  uploadErrorB: string;
+  markers: DiffMarker[];
+  radiusSlider: number;
+  findCount: number;
+  imageAspectRatio: number | null; // imageB naturalWidth / naturalHeight — for server-side hit correction
+}
+
+function makeEmptyEditor(): LevelEditorState {
+  return {
+    levelId: null,
+    name: '',
+    imageAUrl: '',
+    imageBUrl: '',
+    imageBLoaded: '',
+    uploadingA: false,
+    uploadingB: false,
+    uploadErrorA: '',
+    uploadErrorB: '',
+    markers: [],
+    radiusSlider: 7,
+    findCount: 1,
+    imageAspectRatio: null,
+  };
+}
+
+interface SpotDifferenceLevelsPanelProps {
+  packageId: string;
+}
+
+function SpotDifferenceLevelsPanel({ packageId: _packageId }: SpotDifferenceLevelsPanelProps) {
+  const [expanded, setExpanded] = useState(false);
+  const [levels, setLevels] = useState<GameLevel[]>([]);
+  const [loadingLevels, setLoadingLevels] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+  const [hasFetched, setHasFetched] = useState(false);
+
+  const [editor, setEditor] = useState<LevelEditorState | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);     // Image B — clickable
+  const canvasARef = useRef<HTMLCanvasElement>(null);    // Image A — reference only
+  const containerRef = useRef<HTMLDivElement>(null);
+  const containerARef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const imgARef = useRef<HTMLImageElement | null>(null);
+  const drawRectRef = useRef<DrawRect | null>(null);
+  const editorRef = useRef<LevelEditorState | null>(null);
+
+  // Keep editorRef in sync so the canvas click closure is always fresh
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
+
+  // ── Fetch levels ─────────────────────────────────────────────────────────
+
+  const fetchLevels = useCallback(async () => {
+    setLoadingLevels(true);
+    setListError(null);
+    try {
+      const res = await fetch(`${BASE_URL}/admin/games/spot_difference/levels`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json() as { success: boolean; data: GameLevel[] };
+      setLevels(Array.isArray(body.data) ? body.data : []);
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Failed to load levels');
+    } finally {
+      setLoadingLevels(false);
+      setHasFetched(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (expanded && !hasFetched && !loadingLevels) {
+      fetchLevels();
+    }
+  }, [expanded, hasFetched, loadingLevels, fetchLevels]);
+
+  // ── Canvas drawing ────────────────────────────────────────────────────────
+
+  const redraw = useCallback(() => {
+    // ── Image B (clickable — markers drawn here) ──────────────────────────
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#0D0D1A';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const img = imgRef.current;
+        if (img && img.complete && img.naturalWidth > 0) {
+          const dr = getDrawRect(canvas.width, canvas.height, img.naturalWidth, img.naturalHeight);
+          drawRectRef.current = dr;
+          ctx.drawImage(img, dr.dx, dr.dy, dr.dw, dr.dh);
+
+          const currentMarkers = editorRef.current?.markers ?? [];
+          currentMarkers.forEach((m, i) => {
+            const cx = dr.dx + m.x * dr.dw;
+            const cy = dr.dy + m.y * dr.dh;
+            const r = m.radius * dr.dw;
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(124,58,237,0.25)';
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(124,58,237,0.9)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            const labelSize = Math.max(11, Math.min(16, r * 0.65));
+            ctx.font = `bold ${labelSize}px system-ui, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillText(String(i + 1), cx + 1, cy + 1);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(String(i + 1), cx, cy);
+          });
+        }
+      }
+    }
+
+    // ── Image A (reference — no markers) ─────────────────────────────────
+    const canvasA = canvasARef.current;
+    if (canvasA) {
+      const ctxA = canvasA.getContext('2d');
+      if (ctxA) {
+        ctxA.clearRect(0, 0, canvasA.width, canvasA.height);
+        ctxA.fillStyle = '#0D0D1A';
+        ctxA.fillRect(0, 0, canvasA.width, canvasA.height);
+
+        const imgA = imgARef.current;
+        if (imgA && imgA.complete && imgA.naturalWidth > 0) {
+          const dr = getDrawRect(canvasA.width, canvasA.height, imgA.naturalWidth, imgA.naturalHeight);
+          ctxA.drawImage(imgA, dr.dx, dr.dy, dr.dw, dr.dh);
+        }
+      }
+    }
+  }, []);
+
+  // Redraw whenever markers or either image changes
+  useEffect(() => {
+    redraw();
+  }, [editor?.markers, editor?.imageBLoaded, editor?.imageAUrl, redraw]);
+
+  const syncCanvasSize = useCallback(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (canvas && container) {
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+    }
+    const canvasA = canvasARef.current;
+    const containerA = containerARef.current;
+    if (canvasA && containerA) {
+      canvasA.width = containerA.clientWidth;
+      canvasA.height = containerA.clientHeight;
+    }
+  }, []);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !editor) return;
+    const observer = new ResizeObserver(() => {
+      syncCanvasSize();
+      redraw();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [editor, syncCanvasSize, redraw]);
+
+  // Canvas click handler
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !editor) return;
+
+    const handleClick = (e: MouseEvent) => {
+      const dr = drawRectRef.current;
+      if (!imgRef.current || !dr) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const tapX = e.clientX - rect.left;
+      const tapY = e.clientY - rect.top;
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const cx = tapX * scaleX;
+      const cy = tapY * scaleY;
+      const normX = (cx - dr.dx) / dr.dw;
+      const normY = (cy - dr.dy) / dr.dh;
+
+      if (normX < 0 || normX > 1 || normY < 0 || normY > 1) return;
+
+      const currentEditor = editorRef.current;
+      if (!currentEditor) return;
+
+      const newMarker: DiffMarker = {
+        x: Math.round(normX * 100) / 100,
+        y: Math.round(normY * 100) / 100,
+        radius: currentEditor.radiusSlider / 100,
+      };
+
+      setEditor((prev) => prev ? { ...prev, markers: [...prev.markers, newMarker] } : prev);
+    };
+
+    canvas.addEventListener('click', handleClick);
+    return () => canvas.removeEventListener('click', handleClick);
+  }, [editor?.imageBLoaded]); // re-bind when image changes
+
+  // ── Image upload ──────────────────────────────────────────────────────────
+
+  const uploadImage = async (file: File, which: 'A' | 'B') => {
+    if (which === 'A') {
+      setEditor((prev) => prev ? { ...prev, uploadingA: true, uploadErrorA: '' } : prev);
+    } else {
+      imgRef.current = null;
+      drawRectRef.current = null;
+      setEditor((prev) => prev ? { ...prev, uploadingB: true, uploadErrorB: '', imageBLoaded: '', markers: [] } : prev);
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch(`${BASE_URL}/admin/upload`, { method: 'POST', body: formData });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { message?: string }).message ?? `HTTP ${res.status}`);
+      }
+      const body = await res.json() as { success: boolean; data: { url: string } };
+      const url = body.data?.url;
+
+      if (which === 'A') {
+        const imgA = new Image();
+        imgA.onload = () => {
+          imgARef.current = imgA;
+          setEditor((prev) => prev ? { ...prev, imageAUrl: url, uploadingA: false } : prev);
+          syncCanvasSize();
+          setTimeout(() => redraw(), 0);
+        };
+        imgA.onerror = () => {
+          setEditor((prev) => prev ? { ...prev, imageAUrl: url, uploadingA: false, uploadErrorA: 'Uploaded but image failed to load.' } : prev);
+        };
+        imgA.src = url;
+      } else {
+        // Load Image B into canvas after upload
+        const img = new Image();
+        img.onload = () => {
+          imgRef.current = img;
+          const ar = img.naturalWidth > 0 && img.naturalHeight > 0
+            ? img.naturalWidth / img.naturalHeight
+            : null;
+          setEditor((prev) =>
+            prev ? { ...prev, imageBUrl: url, imageBLoaded: url, uploadingB: false, imageAspectRatio: ar } : prev
+          );
+          syncCanvasSize();
+          setTimeout(() => redraw(), 0);
+        };
+        img.onerror = () => {
+          setEditor((prev) =>
+            prev ? { ...prev, imageBUrl: url, uploadingB: false, uploadErrorB: 'Uploaded but image failed to load.' } : prev
+          );
+        };
+        img.src = url;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      if (which === 'A') {
+        setEditor((prev) => prev ? { ...prev, uploadingA: false, uploadErrorA: msg } : prev);
+      } else {
+        setEditor((prev) => prev ? { ...prev, uploadingB: false, uploadErrorB: msg } : prev);
+      }
+    }
+  };
+
+  // ── Open editor ───────────────────────────────────────────────────────────
+
+  const openNewEditor = () => {
+    imgRef.current = null;
+    imgARef.current = null;
+    drawRectRef.current = null;
+    setSaveError(null);
+    setEditor(makeEmptyEditor());
+  };
+
+  const openEditEditor = (level: GameLevel) => {
+    imgRef.current = null;
+    drawRectRef.current = null;
+    setSaveError(null);
+
+    const markers = parseDifferences(level.config.differences);
+    const imageBUrl = level.config.imageB ?? '';
+
+    setEditor({
+      levelId: level.id,
+      name: level.name,
+      imageAUrl: level.config.imageA ?? '',
+      imageBUrl,
+      imageBLoaded: '',
+      uploadingA: false,
+      uploadingB: false,
+      uploadErrorA: '',
+      uploadErrorB: '',
+      markers,
+      radiusSlider: markers.length > 0 ? Math.round(markers[0].radius * 100) : 7,
+      findCount: level.config.findCount ?? 1,
+      imageAspectRatio: (level.config.imageAspectRatio as number | undefined) ?? null,
+    });
+
+    // Auto-load existing Image A into reference canvas
+    const imageAUrl = level.config.imageA ?? '';
+    if (imageAUrl) {
+      const imgA = new Image();
+      imgA.onload = () => {
+        imgARef.current = imgA;
+        syncCanvasSize();
+        setTimeout(() => redraw(), 0);
+      };
+      imgA.src = imageAUrl;
+    }
+
+    // Auto-load existing Image B into clickable canvas
+    if (imageBUrl) {
+      const img = new Image();
+      img.onload = () => {
+        imgRef.current = img;
+        const ar = img.naturalWidth > 0 && img.naturalHeight > 0
+          ? img.naturalWidth / img.naturalHeight
+          : null;
+        setEditor((prev) => prev ? { ...prev, imageBLoaded: imageBUrl, imageAspectRatio: ar } : prev);
+        syncCanvasSize();
+        setTimeout(() => redraw(), 0);
+      };
+      img.src = imageBUrl;
+    }
+  };
+
+  const closeEditor = () => {
+    imgRef.current = null;
+    imgARef.current = null;
+    drawRectRef.current = null;
+    setEditor(null);
+    setSaveError(null);
+  };
+
+  // ── Save level ────────────────────────────────────────────────────────────
+
+  const handleSave = async () => {
+    if (!editor) return;
+
+    const trimmedName = editor.name.trim();
+    if (!trimmedName) {
+      setSaveError('Level name is required.');
+      return;
+    }
+    if (!editor.imageBUrl) {
+      setSaveError('Image B (the modified image) is required.');
+      return;
+    }
+    if (editor.markers.length < 3) {
+      setSaveError(`Place at least 3 differences (currently ${editor.markers.length}).`);
+      return;
+    }
+    if (editor.markers.length > 10) {
+      setSaveError('Maximum 10 differences per level.');
+      return;
+    }
+    if (editor.findCount > editor.markers.length) {
+      setSaveError(`Find count (${editor.findCount}) can't exceed differences placed (${editor.markers.length}).`);
+      return;
+    }
+
+    setSaving(true);
+    setSaveError(null);
+
+    const differencesStr = JSON.stringify(
+      editor.markers.map((m) => ({ x: m.x, y: m.y, radius: m.radius }))
+    );
+
+    const payload = {
+      name: trimmedName,
+      config: {
+        imageA: editor.imageAUrl,
+        imageB: editor.imageBUrl,
+        differences: differencesStr,
+        findCount: editor.findCount,
+        ...(editor.imageAspectRatio !== null ? { imageAspectRatio: editor.imageAspectRatio } : {}),
+      },
+    };
+
+    try {
+      const url =
+        editor.levelId
+          ? `${BASE_URL}/admin/games/spot_difference/levels/${editor.levelId}`
+          : `${BASE_URL}/admin/games/spot_difference/levels`;
+      const method = editor.levelId ? 'PATCH' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { message?: string }).message ?? `HTTP ${res.status}`);
+      }
+
+      closeEditor();
+      await fetchLevels();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Delete level ──────────────────────────────────────────────────────────
+
+  const handleDelete = async (level: GameLevel) => {
+    const confirmed = window.confirm(
+      `Delete level "${level.name}"?\n\nThis cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(
+        `${BASE_URL}/admin/games/spot_difference/levels/${level.id}`,
+        { method: 'DELETE' }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { message?: string }).message ?? `HTTP ${res.status}`);
+      }
+      setLevels((prev) => prev.filter((l) => l.id !== level.id));
+      if (editor?.levelId === level.id) closeEditor();
+    } catch (err) {
+      alert(`Delete failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const diffCount = (level: GameLevel) => parseDifferences(level.config.differences).length;
+
+  return (
+    <div className="border-t border-euphoria-border mt-4 pt-4">
+      {/* Toggle header */}
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="flex items-center gap-2 cursor-pointer select-none text-sm font-semibold text-gray-400 hover:text-gray-200 transition-colors w-full text-left"
+      >
+        <svg
+          className={[
+            'h-3.5 w-3.5 shrink-0 transition-transform duration-200',
+            expanded ? 'rotate-90' : '',
+          ].join(' ')}
+          viewBox="0 0 20 20"
+          fill="currentColor"
+        >
+          <path
+            fillRule="evenodd"
+            d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+            clipRule="evenodd"
+          />
+        </svg>
+        Levels
+        {!loadingLevels && (
+          <span className="ml-1 text-xs font-normal text-gray-600">({levels.length})</span>
+        )}
+        {loadingLevels && <Spinner />}
+      </button>
+
+      {expanded && (
+        <div className="mt-3 space-y-3">
+          {/* Error banner */}
+          {listError && (
+            <p className="text-red-400 text-xs">
+              Failed to load levels: {listError}{' '}
+              <button
+                onClick={fetchLevels}
+                className="underline hover:text-red-300"
+              >
+                Retry
+              </button>
+            </p>
+          )}
+
+          {/* Level list */}
+          {levels.length > 0 && (
+            <div className="space-y-1">
+              {levels.map((level) => {
+                const count = diffCount(level);
+                return (
+                  <div
+                    key={level.id}
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-900/50 border border-euphoria-border"
+                  >
+                    <span className="text-sm font-semibold text-gray-200 flex-1 truncate">
+                      {level.name}
+                    </span>
+                    <span className="text-xs text-gray-500 shrink-0">
+                      {count} {count === 1 ? 'diff' : 'diffs'}
+                    </span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-euphoria-purple/10 border border-euphoria-purple/20 text-euphoria-purple shrink-0">
+                      findCount:{level.config.findCount ?? 1}
+                    </span>
+                    <button
+                      onClick={() => openEditEditor(level)}
+                      className="text-xs text-gray-400 hover:text-gray-100 transition-colors shrink-0 px-2 py-1 rounded hover:bg-white/5"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(level)}
+                      className="text-xs text-red-500/70 hover:text-red-400 transition-colors shrink-0 px-2 py-1 rounded hover:bg-red-500/5"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!loadingLevels && levels.length === 0 && !listError && (
+            <p className="text-xs text-gray-600 italic">No levels yet. Add one below.</p>
+          )}
+
+          {/* Add Level button */}
+          {!editor && (
+            <button
+              onClick={openNewEditor}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-euphoria-purple/40 text-euphoria-purple text-xs font-semibold hover:bg-euphoria-purple/10 transition-colors w-full"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+              </svg>
+              Add Level
+            </button>
+          )}
+
+          {/* ── Editor panel ── */}
+          {editor && (
+            <div className="mt-3 rounded-xl border border-euphoria-border bg-gray-900/40 p-4 space-y-4">
+              {/* Level name */}
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Level name</label>
+                <input
+                  type="text"
+                  value={editor.name}
+                  onChange={(e) =>
+                    setEditor((prev) => prev ? { ...prev, name: e.target.value } : prev)
+                  }
+                  placeholder="e.g. beach-scene"
+                  className="bg-gray-900 border border-euphoria-border rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-euphoria-purple w-full placeholder-gray-600"
+                />
+              </div>
+
+              {/* Image uploads */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Image A */}
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1.5">
+                    Image A — Original
+                  </label>
+                  <ImageUploadZone
+                    uploaded={editor.imageAUrl}
+                    uploading={editor.uploadingA}
+                    error={editor.uploadErrorA}
+                    onFile={(f) => uploadImage(f, 'A')}
+                    onClear={() => {
+                      imgARef.current = null;
+                      setEditor((prev) => prev ? { ...prev, imageAUrl: '', uploadErrorA: '' } : prev);
+                      setTimeout(() => redraw(), 0);
+                    }}
+                  />
+                </div>
+                {/* Image B */}
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1.5">
+                    Image B — Modified <span className="text-euphoria-purple">(click to mark)</span>
+                  </label>
+                  <ImageUploadZone
+                    uploaded={editor.imageBUrl}
+                    uploading={editor.uploadingB}
+                    error={editor.uploadErrorB}
+                    onFile={(f) => uploadImage(f, 'B')}
+                    onClear={() => {
+                      imgRef.current = null;
+                      drawRectRef.current = null;
+                      setEditor((prev) =>
+                        prev
+                          ? { ...prev, imageBUrl: '', imageBLoaded: '', uploadErrorB: '', markers: [] }
+                          : prev
+                      );
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Dual canvas — Image A (reference) + Image B (clickable) */}
+              <div className="grid grid-cols-2 gap-2" style={{ height: 280 }}>
+                {/* Image A — original, reference only */}
+                <div className="flex flex-col gap-1 min-h-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Original</span>
+                  <div
+                    ref={containerARef}
+                    className="flex-1 bg-[#1A1A2E] rounded-xl border border-euphoria-border overflow-hidden"
+                  >
+                    {!editor.imageAUrl ? (
+                      <div className="h-full flex items-center justify-center">
+                        <p className="text-[11px] text-gray-600">Upload Image A</p>
+                      </div>
+                    ) : (
+                      <canvas
+                        ref={canvasARef}
+                        style={{ width: '100%', height: '100%', display: 'block' }}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Image B — modified, click to place markers */}
+                <div className="flex flex-col gap-1 min-h-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-euphoria-purple">Modified — click to mark</span>
+                  <div
+                    ref={containerRef}
+                    className="flex-1 bg-[#1A1A2E] rounded-xl border border-euphoria-border overflow-hidden cursor-crosshair"
+                    style={{ borderColor: editor.imageBLoaded ? undefined : undefined }}
+                  >
+                    {!editor.imageBLoaded ? (
+                      <div className="h-full flex items-center justify-center">
+                        <p className="text-[11px] text-gray-600">Upload Image B to mark</p>
+                      </div>
+                    ) : (
+                      <canvas
+                        ref={canvasRef}
+                        style={{ width: '100%', height: '100%', display: 'block' }}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Marker settings row */}
+              <div className="flex items-center gap-6 flex-wrap">
+                <div className="flex items-center gap-3 flex-1 min-w-[200px]">
+                  <label className="text-xs text-gray-400 shrink-0">Marker radius</label>
+                  <input
+                    type="range"
+                    min={2}
+                    max={15}
+                    step={1}
+                    value={editor.radiusSlider}
+                    onChange={(e) =>
+                      setEditor((prev) =>
+                        prev ? { ...prev, radiusSlider: Number(e.target.value) } : prev
+                      )
+                    }
+                    className="flex-1 accent-euphoria-purple"
+                  />
+                  <span className="text-xs font-mono text-euphoria-purple w-8 text-right">
+                    {editor.radiusSlider}%
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-400 shrink-0">Find count</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={Math.max(1, editor.markers.length)}
+                    value={editor.findCount}
+                    onChange={(e) =>
+                      setEditor((prev) => {
+                        if (!prev) return prev;
+                        const val = Math.min(
+                          Math.max(1, Number(e.target.value)),
+                          prev.markers.length || 1,
+                        );
+                        return { ...prev, findCount: val };
+                      })
+                    }
+                    className="bg-gray-900 border border-euphoria-border rounded-lg px-2 py-1 text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-euphoria-purple w-14"
+                  />
+                  {editor.markers.length > 0 && (
+                    <span className="text-[10px] text-gray-600">
+                      of {editor.markers.length}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Difference counter hint */}
+              <div className="flex items-center gap-2">
+                <span className={[
+                  'text-xs font-medium',
+                  editor.markers.length < 3 ? 'text-amber-500' :
+                  editor.markers.length > 10 ? 'text-red-400' : 'text-emerald-400',
+                ].join(' ')}>
+                  {editor.markers.length} difference{editor.markers.length !== 1 ? 's' : ''} placed
+                </span>
+                <span className="text-[10px] text-gray-700">· need 3–10 to save</span>
+              </div>
+
+              {/* Marker list */}
+              {editor.markers.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 font-semibold uppercase tracking-widest">
+                    Markers placed: {editor.markers.length}
+                  </p>
+                  {editor.markers.map((m, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between bg-gray-900/60 rounded-lg px-2.5 py-1.5"
+                    >
+                      <span className="text-xs font-mono text-gray-400">
+                        #{i + 1}&nbsp;&nbsp;x:{m.x}&nbsp;&nbsp;y:{m.y}&nbsp;&nbsp;r:{m.radius}
+                      </span>
+                      <button
+                        onClick={() =>
+                          setEditor((prev) =>
+                            prev
+                              ? { ...prev, markers: prev.markers.filter((_, idx) => idx !== i) }
+                              : prev
+                          )
+                        }
+                        className="text-gray-500 hover:text-red-400 transition-colors ml-2 text-base leading-none"
+                        title="Remove marker"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Action row */}
+              <div className="flex items-center gap-3 pt-1 flex-wrap">
+                {editor.markers.length > 0 && (
+                  <button
+                    onClick={() =>
+                      setEditor((prev) => prev ? { ...prev, markers: [] } : prev)
+                    }
+                    className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+                  >
+                    Clear All
+                  </button>
+                )}
+                <div className="flex-1" />
+                <button
+                  onClick={closeEditor}
+                  className="text-xs text-gray-400 hover:text-gray-200 transition-colors px-3 py-1.5"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className={[
+                    'inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                    'bg-euphoria-purple text-white hover:bg-violet-500',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-euphoria-purple',
+                    saving ? 'opacity-60 cursor-not-allowed' : '',
+                  ].join(' ')}
+                >
+                  {saving ? (
+                    <>
+                      <Spinner />
+                      Saving…
+                    </>
+                  ) : (
+                    'Save Level'
+                  )}
+                </button>
+              </div>
+
+              {saveError && (
+                <p className="text-red-400 text-xs">{saveError}</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PackageCard ──────────────────────────────────────────────────────────────
 
 interface PackageCardProps {
   pkg: GamePackage;
@@ -255,6 +1206,11 @@ function PackageCard({ pkg, onToggle, onDelete }: PackageCardProps) {
             )}
           </button>
         </div>
+
+        {/* Spot Difference levels panel */}
+        {pkg.manifest?.id === 'spot_difference' && (
+          <SpotDifferenceLevelsPanel packageId={pkg.id} />
+        )}
       </div>
     </div>
   );

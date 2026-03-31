@@ -188,8 +188,10 @@ export interface PingPayload {
 
 /** Events the server emits to the client (clips namespace) */
 export interface ClipServerEvents {
-  /** Clip session initialized — config delivered */
+  /** Clip session initialized — bundleUrl delivered for WebView pre-load */
   clip_ready: ClipReadyEvent;
+  /** Server fires the game at gameOffsetMs — mirrors live show round_question */
+  round_question: ClipRoundQuestionEvent;
   /** Result of submitted clip answer */
   clip_result: ClipResultEvent;
   /** Error scoped to this clip session */
@@ -198,8 +200,8 @@ export interface ClipServerEvents {
 
 /** Events the client sends to the server (clips namespace) */
 export interface ClipClientEvents {
-  /** Start a clip play session */
-  start_clip: StartClipPayload;
+  /** Request next unseen clip — server selects based on user's watch history */
+  next_clip: Record<string, never>;
   /** Submit answer for a clip session */
   submit_clip_answer: SubmitClipAnswerPayload;
 }
@@ -207,19 +209,41 @@ export interface ClipClientEvents {
 // --- Clip server event payloads ---
 
 export interface ClipReadyEvent {
-  sessionId: string;
   clipId: string;
-  /** Unix ms — server-authoritative serve time */
-  servedAt: number;
-  config: RoundStartPayload;
+  sessionId: string;
+  gameType: string;
+  /** WebView bundle URL — pre-load while video starts buffering */
+  bundleUrl: string | null;
+  /** Video URL to play */
+  mediaUrl: string;
+  /** Ms from clip start when server will fire round_question */
+  gameOffsetMs: number;
+  /** Clip video duration in ms */
+  clipDurationMs: number;
+  playCount: number;
+}
+
+export interface ClipRoundQuestionEvent {
+  clipId: string;
+  sessionId: string;
+  gameType: string;
+  bundleUrl: string | null;
+  /** Flat game payload — same shape as live show round_question gamePayload */
+  gamePayload: Record<string, unknown>;
+  timeLimitMs: number;
+  /** Unix ms — server-authoritative round deadline */
+  deadlineEpochMs: number;
 }
 
 export interface ClipResultEvent {
-  sessionId: string;
+  clipId?: string;
+  sessionId?: string;
   correct: boolean;
-  correctAnswer: unknown;
+  correctAnswer: string | null;
   responseTimeMs: number;
   score: number;
+  percentile: number;
+  totalPlayers: number;
 }
 
 export interface ClipErrorEvent {
@@ -228,10 +252,6 @@ export interface ClipErrorEvent {
 }
 
 // --- Clip client event payloads ---
-
-export interface StartClipPayload {
-  clipId: string;
-}
 
 export interface SubmitClipAnswerPayload {
   sessionId: string;

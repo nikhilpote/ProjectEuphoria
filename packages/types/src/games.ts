@@ -14,8 +14,7 @@ export type GameType =
   | 'spelling_bee'
   | 'fruit_cutting'
   | 'knife_at_center'
-  | 'find_items'
-  | 'number_dash';
+  | 'find_items';
 
 // ---------------------------------------------------------------------------
 // Trivia
@@ -166,24 +165,6 @@ export interface FindItemsAnswer {
 }
 
 // ---------------------------------------------------------------------------
-// Number Dash
-// ---------------------------------------------------------------------------
-
-/**
- * Score-based game — numbers fall, tap in order. Players scoring below
- * cutoffScore are eliminated. Delivered as a WebView bundle.
- */
-export interface NumberDashAnswer {
-  gameType: 'number_dash';
-  /** Total points accumulated (5 per normal tap, 20 per prime tap) */
-  score: number;
-  /** Highest sequential number reached */
-  reached: number;
-  /** Count of prime numbers tapped */
-  primesTapped: number;
-}
-
-// ---------------------------------------------------------------------------
 // Union types
 // ---------------------------------------------------------------------------
 
@@ -203,8 +184,7 @@ export type GameAnswer =
   | SpellingBeeAnswer
   | FruitCuttingAnswer
   | KnifeAtCenterAnswer
-  | FindItemsAnswer
-  | NumberDashAnswer;
+  | FindItemsAnswer;
 
 // ---------------------------------------------------------------------------
 // Game Package (OTA delivery)
@@ -249,6 +229,18 @@ export interface GamePackage {
   bundleUrl: string;
   thumbnailUrl: string | null;
   createdAt: string;
+}
+
+/** A named level belonging to a game package (currently only spot_difference) */
+export interface GameLevel {
+  id: string;
+  gamePackageId: string;
+  /** Admin-set slug, e.g. 'beach-scene'. Used as levelId in clip/show config. */
+  name: string;
+  /** Game-specific config — for spot_difference: { imageA, imageB, differences, findCount } */
+  config: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface GameDefinition {

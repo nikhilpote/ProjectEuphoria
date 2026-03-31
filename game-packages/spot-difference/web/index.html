@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Spot the Difference</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+    :root {
+      --bg:      #0D0D1A;
+      --card:    #1A1A2E;
+      --border:  #2A2A4A;
+      --accent:  #7C3AED;
+      --text:    #FFFFFF;
+      --muted:   #9CA3AF;
+      --success: #10B981;
+      --danger:  #EF4444;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+      height: 100%;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    #root {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      padding: 10px 12px 12px;
+      gap: 8px;
+    }
+
+    /* ── Timer ──────────────────────────────────────────────── */
+    #hud {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    #timer-track {
+      flex: 1;
+      height: 5px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    #timer-fill {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, var(--accent), #A855F7);
+      border-radius: 3px;
+      transform-origin: left;
+      transition: transform 0.25s linear, background 0.4s;
+    }
+
+    #timer-fill.urgent { background: linear-gradient(90deg, var(--danger), #F97316); }
+
+    #timer-text {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      min-width: 28px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #timer-text.urgent { color: var(--danger); }
+
+    /* ── Image panels ───────────────────────────────────────── */
+    #panels {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      gap: 6px;
+      min-height: 0;
+    }
+
+    .panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-height: 0;
+    }
+
+    .panel-label {
+      text-align: center;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .panel-label.highlight { color: var(--accent); }
+
+    .canvas-wrap {
+      flex: 1;
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      min-height: 0;
+    }
+
+    .canvas-wrap.right {
+      border-color: var(--accent);
+      cursor: crosshair;
+    }
+
+    .canvas-wrap.found {
+      border-color: var(--success);
+      box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+    }
+
+    .canvas-wrap.wrong-flash {
+      border-color: var(--danger);
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Overlay canvas for tap feedback — sits on top of image canvas */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    /* ── Instruction bar ────────────────────────────────────── */
+    #instruction {
+      flex-shrink: 0;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.03em;
+      padding: 4px 0;
+    }
+
+    /* ── Result banner ──────────────────────────────────────── */
+    #banner {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: rgba(10, 10, 26, 0.88);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+      z-index: 100;
+    }
+
+    #banner.visible { opacity: 1; pointer-events: all; }
+
+    #banner-icon {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+    }
+
+    #banner-icon.success { background: rgba(16,185,129,0.15); border: 2px solid var(--success); }
+    #banner-icon.fail    { background: rgba(239,68,68,0.15);   border: 2px solid var(--danger);  }
+
+    #banner-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    #banner-title.success { color: var(--success); }
+    #banner-title.fail    { color: var(--danger);  }
+
+    #banner-sub {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    /* ── Loading ────────────────────────────────────────────── */
+    #loading {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      z-index: 200;
+      transition: opacity 0.3s;
+    }
+
+    #loading.hidden { opacity: 0; pointer-events: none; }
+
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="loading"><div class="spinner"></div></div>
+
+  <div id="root">
+    <!-- HUD -->
+    <div id="hud">
+      <div id="timer-track"><div id="timer-fill"></div></div>
+      <div id="timer-text">--</div>
+    </div>
+
+    <!-- Image panels -->
+    <div id="panels">
+      <!-- Left: original -->
+      <div class="panel">
+        <div class="panel-label">ORIGINAL</div>
+        <div class="canvas-wrap" id="wrap-a">
+          <canvas id="canvas-a"></canvas>
+        </div>
+      </div>
+      <!-- Right: modified — tappable -->
+      <div class="panel">
+        <div class="panel-label highlight">↓ TAP THE DIFFERENCE BELOW</div>
+        <div class="canvas-wrap right" id="wrap-b">
+          <canvas id="canvas-b"></canvas>
+          <canvas id="canvas-overlay" class="overlay"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Instruction -->
+    <div id="instruction">Tap the difference in the bottom image</div>
+  </div>
+
+  <!-- Result banner -->
+  <div id="banner">
+    <div id="banner-icon"></div>
+    <div id="banner-title"></div>
+    <div id="banner-sub"></div>
+  </div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────────
+let config       = null;   // { imageA, imageB, differences, findCount, timeLimitMs }
+let imgA         = null;
+let imgB         = null;
+let timerStart   = null;
+let timeLimitMs  = 20000;
+let timerRaf     = null;
+let answered     = false;
+let foundCount   = 0;
+let wrongTaps    = [];     // [{ x, y, born }] canvas-b pixel coords
+let foundCircles = [];     // [{ x, y, born }] canvas-b pixel coords
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOM refs
+// ─────────────────────────────────────────────────────────────────────────────
+const $loading   = document.getElementById('loading');
+const $timerFill = document.getElementById('timer-fill');
+const $timerText = document.getElementById('timer-text');
+const $wrapA     = document.getElementById('wrap-a');
+const $wrapB     = document.getElementById('wrap-b');
+const $canvasA   = document.getElementById('canvas-a');
+const $canvasB   = document.getElementById('canvas-b');
+const $overlay   = document.getElementById('canvas-overlay');
+const $instruc   = document.getElementById('instruction');
+const $banner    = document.getElementById('banner');
+const $bIcon     = document.getElementById('banner-icon');
+const $bTitle    = document.getElementById('banner-title');
+const $bSub      = document.getElementById('banner-sub');
+
+const ctxA       = $canvasA.getContext('2d');
+const ctxB       = $canvasB.getContext('2d');
+const ctxO       = $overlay.getContext('2d');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bridge
+// ─────────────────────────────────────────────────────────────────────────────
+function postToNative(msg) {
+  const str = JSON.stringify(msg);
+  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(str);
+  else window.parent.postMessage(str, '*');
+}
+
+window.addEventListener('message', (e) => {
+  try {
+    const msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+    if (msg.type === 'GAME_INIT' && msg.payload) initGame(msg.payload);
+  } catch {}
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────────────────────────────────────
+async function initGame(payload) {
+  timeLimitMs = Number(payload.timeLimitMs ?? 20000);
+
+  let raw = payload.spotDifference ?? payload;
+
+  // If admin configured a levelId, fetch the level config from the API.
+  // apiBaseUrl is injected by the platform; falls back to same-origin.
+  if (raw.levelId) {
+    const base = (payload.apiBaseUrl ?? '').replace(/\/$/, '');
+    try {
+      const res  = await fetch(`${base}/api/v1/games/spot_difference/levels/${encodeURIComponent(raw.levelId)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json();
+      raw = body.config ?? body;
+    } catch (err) {
+      console.error('Failed to fetch level:', err);
+      // Show error state instead of blank screen
+      $loading.querySelector('.spinner').style.display = 'none';
+      const msg = document.createElement('p');
+      msg.style.cssText = 'color:#EF4444;font-size:14px;text-align:center;padding:24px';
+      msg.textContent = `Could not load level "${raw.levelId}". Check your connection.`;
+      $loading.appendChild(msg);
+      return;
+    }
+  }
+
+  config = {
+    imageA:      raw.imageA ?? raw.image_a ?? '',
+    imageB:      raw.imageB ?? raw.image_b ?? '',
+    differences: parseDifferences(raw.differences),
+    findCount:   Number(raw.findCount ?? raw.find_count ?? 1),
+  };
+
+  loadImages(config.imageA, config.imageB).then(() => {
+    sizeCanvases();
+    drawImages();
+    $loading.classList.add('hidden');
+    postToNative({ type: 'GAME_READY', payload: { gameType: 'spot_difference' } });
+    startTimer();
+  });
+}
+
+function parseDifferences(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Image loading
+// ─────────────────────────────────────────────────────────────────────────────
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload  = () => resolve(img);
+    img.onerror = () => reject(new Error(`Failed to load: ${src}`));
+    img.src = src;
+  });
+}
+
+async function loadImages(srcA, srcB) {
+  [imgA, imgB] = await Promise.all([loadImage(srcA), loadImage(srcB)]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Canvas sizing — match element's CSS pixel size
+// ─────────────────────────────────────────────────────────────────────────────
+function sizeCanvas(canvas, wrap) {
+  const dpr = window.devicePixelRatio || 1;
+  const w   = wrap.clientWidth;
+  const h   = wrap.clientHeight;
+  canvas.width  = w * dpr;
+  canvas.height = h * dpr;
+  canvas.getContext('2d').scale(dpr, dpr);
+}
+
+function sizeCanvases() {
+  sizeCanvas($canvasA, $wrapA);
+  sizeCanvas($canvasB, $wrapB);
+  // Overlay matches wrap-b exactly
+  const dpr = window.devicePixelRatio || 1;
+  $overlay.width  = $wrapB.clientWidth  * dpr;
+  $overlay.height = $wrapB.clientHeight * dpr;
+  ctxO.scale(dpr, dpr);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Draw — contain image within canvas (letterbox), return draw rect
+// ─────────────────────────────────────────────────────────────────────────────
+function drawContained(ctx, img, canvas) {
+  const cw = canvas.clientWidth;
+  const ch = canvas.clientHeight;
+  const ir = img.naturalWidth / img.naturalHeight;
+  const cr = cw / ch;
+  let dw, dh, dx, dy;
+  if (ir > cr) { dw = cw; dh = cw / ir; dx = 0; dy = (ch - dh) / 2; }
+  else          { dh = ch; dw = ch * ir; dy = 0; dx = (cw - dw) / 2; }
+  ctx.clearRect(0, 0, cw, ch);
+  ctx.drawImage(img, dx, dy, dw, dh);
+  return { dx, dy, dw, dh };
+}
+
+let rectB = null; // cached draw rect for image B (for tap coord mapping)
+
+function drawImages() {
+  drawContained(ctxA, imgA, $canvasA);
+  rectB = drawContained(ctxB, imgB, $canvasB);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Timer
+// ─────────────────────────────────────────────────────────────────────────────
+function startTimer() {
+  timerStart = performance.now();
+  tickTimer();
+}
+
+function tickTimer() {
+  const elapsed = performance.now() - timerStart;
+  const remaining = Math.max(0, timeLimitMs - elapsed);
+  const frac = remaining / timeLimitMs;
+  const secs = Math.ceil(remaining / 1000);
+
+  $timerFill.style.transform = `scaleX(${frac})`;
+  $timerText.textContent = secs;
+
+  const urgent = secs <= 5;
+  $timerFill.classList.toggle('urgent', urgent);
+  $timerText.classList.toggle('urgent', urgent);
+
+  if (remaining <= 0) {
+    if (!answered) timeUp();
+    return;
+  }
+  timerRaf = requestAnimationFrame(tickTimer);
+}
+
+function stopTimer() {
+  if (timerRaf) cancelAnimationFrame(timerRaf);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tap handling
+// ─────────────────────────────────────────────────────────────────────────────
+$wrapB.addEventListener('click', handleTap);
+$wrapB.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  handleTap(t);
+}, { passive: false });
+
+function handleTap(e) {
+  if (answered) return;
+  if (!config || !rectB) return;
+
+  const rect  = $wrapB.getBoundingClientRect();
+  const tapX  = e.clientX - rect.left;
+  const tapY  = e.clientY - rect.top;
+
+  // Normalize to 0-1 within the drawn image area
+  const normX = (tapX - rectB.dx) / rectB.dw;
+  const normY = (tapY - rectB.dy) / rectB.dh;
+
+  // Out of image bounds
+  if (normX < 0 || normX > 1 || normY < 0 || normY > 1) return;
+
+  // Check against all differences — compare in pixel space so hit zone is
+  // circular regardless of image aspect ratio (radius is fraction of image width)
+  const hit = config.differences.find((d) => {
+    if (d._found) return false;
+    const pxDx = (normX - d.x) * rectB.dw;
+    const pxDy = (normY - d.y) * rectB.dh;
+    const pxR  = (d.radius ?? 0.07) * rectB.dw;
+    return Math.sqrt(pxDx * pxDx + pxDy * pxDy) <= pxR;
+  });
+
+  if (hit) {
+    hit._found = true;
+    hit._tapX  = normX;
+    hit._tapY  = normY;
+    foundCount++;
+    spawnFoundCircle(tapX, tapY);
+
+    if (foundCount >= config.findCount) {
+      answered = true;
+      stopTimer();
+      setTimeout(() => showBanner(true), 400);
+      // Send actual tap coordinates so server can validate server-side
+      const foundTaps = config.differences
+        .filter((d) => d._found)
+        .map((d) => ({ x: d._tapX, y: d._tapY }));
+      postToNative({
+        type: 'SUBMIT_ANSWER',
+        payload: { gameType: 'spot_difference', found: true, taps: foundTaps },
+      });
+    } else {
+      $instruc.textContent = `${foundCount} found — keep looking!`;
+    }
+  } else {
+    spawnWrongTap(tapX, tapY);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Visual feedback — overlay canvas animation loop
+// ─────────────────────────────────────────────────────────────────────────────
+requestAnimationFrame(drawOverlay);
+
+const WRONG_DURATION = 600;   // ms for red ripple
+const FOUND_DURATION = 99999; // found circles persist
+
+function spawnWrongTap(x, y) {
+  wrongTaps.push({ x, y, born: performance.now() });
+  // Brief border flash
+  $wrapB.classList.add('wrong-flash');
+  setTimeout(() => $wrapB.classList.remove('wrong-flash'), 250);
+}
+
+function spawnFoundCircle(x, y) {
+  foundCircles.push({ x, y, born: performance.now() });
+  if (foundCount >= config.findCount) {
+    $wrapB.classList.add('found');
+  }
+}
+
+function drawOverlay() {
+  const now = ctxO.canvas.width; // just to reference canvas
+  const cw  = $overlay.clientWidth;
+  const ch  = $overlay.clientHeight;
+  ctxO.clearRect(0, 0, cw, ch);
+
+  const t = performance.now();
+
+  // Wrong taps — expanding red ripple that fades out
+  wrongTaps = wrongTaps.filter((tap) => {
+    const age  = t - tap.born;
+    if (age > WRONG_DURATION) return false;
+    const prog = age / WRONG_DURATION;
+    const r    = 16 + prog * 24;
+    const alpha = 1 - prog;
+    ctxO.beginPath();
+    ctxO.arc(tap.x, tap.y, r, 0, Math.PI * 2);
+    ctxO.strokeStyle = `rgba(239,68,68,${alpha * 0.8})`;
+    ctxO.lineWidth = 2.5;
+    ctxO.stroke();
+    // Inner X
+    ctxO.save();
+    ctxO.globalAlpha = alpha;
+    ctxO.strokeStyle = `rgba(239,68,68,1)`;
+    ctxO.lineWidth = 2;
+    const s = 6;
+    ctxO.beginPath();
+    ctxO.moveTo(tap.x - s, tap.y - s); ctxO.lineTo(tap.x + s, tap.y + s);
+    ctxO.moveTo(tap.x + s, tap.y - s); ctxO.lineTo(tap.x - s, tap.y + s);
+    ctxO.stroke();
+    ctxO.restore();
+    return true;
+  });
+
+  // Found circles — pulsing green ring
+  foundCircles.forEach((fc) => {
+    const age  = t - fc.born;
+    const pulse = 0.85 + 0.15 * Math.sin(age / 180);
+    const r = 22 * pulse;
+
+    // Green filled circle
+    ctxO.beginPath();
+    ctxO.arc(fc.x, fc.y, r, 0, Math.PI * 2);
+    ctxO.fillStyle = 'rgba(16,185,129,0.25)';
+    ctxO.fill();
+
+    // Green ring
+    ctxO.beginPath();
+    ctxO.arc(fc.x, fc.y, r, 0, Math.PI * 2);
+    ctxO.strokeStyle = 'rgba(16,185,129,0.9)';
+    ctxO.lineWidth = 2.5;
+    ctxO.stroke();
+
+    // Checkmark
+    ctxO.save();
+    ctxO.strokeStyle = '#10B981';
+    ctxO.lineWidth = 2.5;
+    ctxO.lineCap = 'round';
+    ctxO.lineJoin = 'round';
+    ctxO.beginPath();
+    ctxO.moveTo(fc.x - 7, fc.y);
+    ctxO.lineTo(fc.x - 2, fc.y + 6);
+    ctxO.lineTo(fc.x + 8, fc.y - 7);
+    ctxO.stroke();
+    ctxO.restore();
+  });
+
+  requestAnimationFrame(drawOverlay);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Time up
+// ─────────────────────────────────────────────────────────────────────────────
+function timeUp() {
+  answered = true;
+  stopTimer();
+
+  // Reveal all differences on image B as dim red circles
+  if (config && rectB) {
+    config.differences.forEach((d) => {
+      if (d._found) return;
+      const px = rectB.dx + d.x * rectB.dw;
+      const py = rectB.dy + d.y * rectB.dh;
+      ctxO.beginPath();
+      ctxO.arc(px, py, (d.radius ?? 0.07) * rectB.dw, 0, Math.PI * 2);
+      ctxO.strokeStyle = 'rgba(239,68,68,0.7)';
+      ctxO.lineWidth = 2.5;
+      ctxO.setLineDash([6, 4]);
+      ctxO.stroke();
+      ctxO.setLineDash([]);
+    });
+  }
+
+  showBanner(false);
+  postToNative({
+    type: 'SUBMIT_ANSWER',
+    payload: { gameType: 'spot_difference', found: false, taps: [] },
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Result banner
+// ─────────────────────────────────────────────────────────────────────────────
+function showBanner(success) {
+  $bIcon.textContent  = success ? '✓' : '✗';
+  $bIcon.className    = success ? 'success' : 'fail';
+  $bTitle.textContent = success ? 'Found it!' : 'Time's up!';
+  $bTitle.className   = success ? 'success' : 'fail';
+  $bSub.textContent   = success
+    ? 'Great eye!'
+    : 'The difference has been revealed';
+  $banner.classList.add('visible');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Resize
+// ─────────────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  if (!imgA || !imgB) return;
+  sizeCanvases();
+  drawImages();
+});
+</script>
+</body>
+</html>

@@ -16,14 +16,32 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import type { Express } from 'express';
-import { IsBoolean } from 'class-validator';
+import { IsBoolean, IsString, IsOptional, IsObject } from 'class-validator';
 import { GamePackagesService } from './game-packages.service';
 import { Public } from '../../common/decorators/public.decorator';
-import type { GamePackage } from '@euphoria/types';
+import type { GamePackage, GameLevel } from '@euphoria/types';
 
 class SetEnabledDto {
   @IsBoolean()
   isEnabled!: boolean;
+}
+
+class CreateLevelDto {
+  @IsString()
+  name!: string;
+
+  @IsObject()
+  config!: Record<string, unknown>;
+}
+
+class UpdateLevelDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsObject()
+  config?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +108,42 @@ export class AdminGamePackagesController {
   async deletePackage(@Param('id') id: string): Promise<void> {
     return this.gamePackagesService.delete(id);
   }
+
+  // ── Level endpoints ────────────────────────────────────────────────────────
+
+  @Get(':id/levels')
+  @ApiOperation({ summary: 'List levels for a game package' })
+  getLevels(@Param('id') id: string): Promise<GameLevel[]> {
+    return this.gamePackagesService.getLevels(id);
+  }
+
+  @Post(':id/levels')
+  @ApiOperation({ summary: 'Create a level for a game package' })
+  createLevel(
+    @Param('id') id: string,
+    @Body() body: CreateLevelDto,
+  ): Promise<GameLevel> {
+    return this.gamePackagesService.createLevel(id, body.name, body.config);
+  }
+
+  @Patch(':id/levels/:levelId')
+  @ApiOperation({ summary: 'Update a level' })
+  updateLevel(
+    @Param('id') id: string,
+    @Param('levelId') levelId: string,
+    @Body() body: UpdateLevelDto,
+  ): Promise<GameLevel> {
+    return this.gamePackagesService.updateLevel(id, levelId, body);
+  }
+
+  @Delete(':id/levels/:levelId')
+  @ApiOperation({ summary: 'Delete a level' })
+  async deleteLevel(
+    @Param('id') id: string,
+    @Param('levelId') levelId: string,
+  ): Promise<void> {
+    return this.gamePackagesService.deleteLevel(id, levelId);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -106,5 +160,15 @@ export class PublicGamePackagesController {
   @ApiOperation({ summary: 'List enabled game packages (public)' })
   getEnabled(): Promise<GamePackage[]> {
     return this.gamePackagesService.getEnabled();
+  }
+
+  @Public()
+  @Get(':id/levels/:levelName')
+  @ApiOperation({ summary: 'Fetch a single level by name — used by game clients at runtime' })
+  getLevel(
+    @Param('id') id: string,
+    @Param('levelName') levelName: string,
+  ): Promise<GameLevel> {
+    return this.gamePackagesService.getLevel(id, levelName);
   }
 }

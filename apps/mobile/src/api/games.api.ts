@@ -139,7 +139,7 @@ export async function validateTriviaAnswer(
 // ─── Game packages ────────────────────────────────────────────────────────────
 
 export interface GamePackageSummary {
-  id: string;       // matches gameType string e.g. 'number_dash'
+  id: string;       // matches gameType string e.g. 'trivia'
   name: string;
   version: string;
   bundleUrl: string;

@@ -3,7 +3,7 @@ import { TriviaModule } from './trivia/trivia.module';
 import { GameRegistry } from './game-registry.service';
 import { TriviaHandler } from './handlers/trivia.handler';
 import { QuickMathHandler } from './handlers/quick-math.handler';
-import { NumberDashHandler } from './handlers/number-dash.handler';
+import { SpotDifferenceHandler } from './handlers/spot-difference.handler';
 
 /**
  * GamesModule aggregates all mini-game sub-modules and the game handler registry.
@@ -24,6 +24,6 @@ export class GamesModule implements OnModuleInit {
   onModuleInit(): void {
     this.registry.register(new TriviaHandler());
     this.registry.register(new QuickMathHandler());
-    this.registry.register(new NumberDashHandler());
+    this.registry.register(new SpotDifferenceHandler());
   }
 }

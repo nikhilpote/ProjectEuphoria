@@ -306,6 +306,27 @@ export interface CoinEarnRatesTable {
 }
 
 // ---------------------------------------------------------------------------
+// game_levels
+// ---------------------------------------------------------------------------
+
+export interface SpotDifferenceLevelConfig {
+  imageA: string;
+  imageB: string;
+  /** JSON-encoded string: [{x,y,radius}[]] normalised 0-1 on Image B */
+  differences: string;
+  findCount: number;
+}
+
+export interface GameLevelsTable {
+  id: PK;
+  game_package_id: string;
+  name: string;
+  config: JSONColumnType<Record<string, unknown>>;
+  created_at: CreatedAt;
+  updated_at: UpdatedAt;
+}
+
+// ---------------------------------------------------------------------------
 // Database interface (root type passed to Kysely<DB>)
 // ---------------------------------------------------------------------------
 
@@ -323,4 +344,5 @@ export interface DB {
   game_packages: GamePackagesTable;
   coin_earn_rates: CoinEarnRatesTable;
   coin_reward_rules: CoinRewardRulesTable;
+  game_levels: GameLevelsTable;
 }

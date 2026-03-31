@@ -7,7 +7,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createReadStream, promises as fs } from 'fs';
 import { lookup as mimeLookup } from 'mime-types';
@@ -226,6 +226,104 @@ export class StorageService {
     await pipeline(response.Body as Readable, createWriteStream(tmpPath));
 
     return { filePath: tmpPath, isTmp: true };
+  }
+
+  /**
+   * Delete a single object by its stored public URL.
+   * For local storage: removes the file from uploads/.
+   */
+  async deleteFile(storedUrl: string): Promise<void> {
+    if (this.provider === 's3') {
+      if (!this.s3) return;
+      const publicBase = this.publicUrl.replace(/\/$/, '');
+      const key = storedUrl.startsWith(publicBase)
+        ? storedUrl.slice(publicBase.length + 1)
+        : storedUrl;
+      await this.s3.send(
+        new DeleteObjectsCommand({
+          Bucket: this.bucket,
+          Delete: { Objects: [{ Key: key }], Quiet: true },
+        }),
+      );
+      this.logger.log(`Deleted S3 object: ${key}`);
+    } else {
+      const filename = path.basename(new URL(storedUrl).pathname);
+      await fs.unlink(path.join('uploads', filename)).catch(() => {});
+    }
+  }
+
+  /**
+   * Delete all S3 objects that belong to a game bundle URL.
+   * Extracts the versioned prefix from the bundle_url and deletes everything under it.
+   * e.g. "https://cdn.../games/trivia/v1.0.0/web/index.html" → deletes all under "games/trivia/v1.0.0/"
+   */
+  async deleteGameBundle(bundleUrl: string): Promise<void> {
+    const publicBase = this.publicUrl.replace(/\/$/, '');
+    const key = bundleUrl.startsWith(publicBase)
+      ? bundleUrl.slice(publicBase.length + 1)
+      : bundleUrl;
+
+    // key = "games/{id}/v{version}/web/index.html" — take first 3 segments as prefix
+    const segments = key.split('/');
+    if (segments.length < 3) return;
+    const prefix = segments.slice(0, 3).join('/') + '/';
+    await this.deleteByPrefix(prefix);
+  }
+
+  /**
+   * Delete all objects under an S3 prefix (e.g. "games/trivia/v1.0.0/").
+   * For local storage: best-effort delete of flattened files matching the prefix.
+   * Safe to call even if no objects exist.
+   */
+  async deleteByPrefix(prefix: string): Promise<void> {
+    if (this.provider === 's3') {
+      await this.deleteS3Prefix(prefix);
+    } else {
+      await this.deleteLocalPrefix(prefix);
+    }
+  }
+
+  private async deleteS3Prefix(prefix: string): Promise<void> {
+    if (!this.s3) return;
+
+    let continuationToken: string | undefined;
+    do {
+      const list = await this.s3.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+        }),
+      );
+
+      const keys = (list.Contents ?? []).map((obj) => ({ Key: obj.Key! }));
+      if (keys.length > 0) {
+        await this.s3.send(
+          new DeleteObjectsCommand({
+            Bucket: this.bucket,
+            Delete: { Objects: keys, Quiet: true },
+          }),
+        );
+        this.logger.log(`Deleted ${keys.length} S3 objects under prefix: ${prefix}`);
+      }
+
+      continuationToken = list.NextContinuationToken;
+    } while (continuationToken);
+  }
+
+  private async deleteLocalPrefix(prefix: string): Promise<void> {
+    // Local storage flattens keys: "games/trivia/v1.0.0/web/index.html" → "games_trivia_v1.0.0_web_index.html"
+    const flatPrefix = prefix.replace(/\//g, '_');
+    try {
+      const files = await fs.readdir('uploads');
+      await Promise.all(
+        files
+          .filter((f) => f.startsWith(flatPrefix))
+          .map((f) => fs.unlink(path.join('uploads', f)).catch(() => {})),
+      );
+    } catch {
+      // uploads/ may not exist in test environments — ignore
+    }
   }
 
   private async uploadToS3(localPath: string, filename: string): Promise<string> {

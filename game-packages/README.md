@@ -40,8 +40,10 @@ your-game-name/
 ZIP it as:
 ```bash
 cd game-packages/
-zip -r your-game-name-v1.0.0.zip your-game-name/
+zip -r your-game-name.zip your-game-name/
 ```
+
+> **Versioning:** Keep version numbers **inside `manifest.json`** only. The zip filename never includes a version (`trivia.zip`, not `trivia-v1.0.0.zip`). Re-uploading the same zip name replaces the previous bundle.
 
 ---
 
@@ -380,7 +382,7 @@ White:        #FFFFFF
 
 ## Uploading a Game
 
-1. Build your game, zip it: `zip -r fruit-cutter-v1.0.0.zip fruit-cutter/`
+1. Build your game, zip it: `zip -r fruit-cutter.zip fruit-cutter/`
 2. Open Admin Panel → **Game Packages** → Upload
 3. The API transcodes nothing (games aren't video) — it stores the ZIP and extracts `manifest.json`
 4. The `bundleUrl` is now available to assign to show rounds

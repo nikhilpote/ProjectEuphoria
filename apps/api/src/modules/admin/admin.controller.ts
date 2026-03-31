@@ -123,6 +123,22 @@ export class AdminController {
     return this.adminService.createShowClips(showId, ranges);
   }
 
+  @Get('clips')
+  @ApiOperation({ summary: 'List all PlayClips across all shows' })
+  getAllClips() {
+    return this.adminService.getAllClips();
+  }
+
+  @Delete('shows/:showId/clips/:clipId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a saved PlayClip and its stored video' })
+  deleteClip(
+    @Param('showId') showId: string,
+    @Param('clipId') clipId: string,
+  ): Promise<void> {
+    return this.adminService.deleteClip(showId, clipId);
+  }
+
   @Post('feature-flags')
   @ApiOperation({ summary: 'Set a feature flag' })
   setFlag(

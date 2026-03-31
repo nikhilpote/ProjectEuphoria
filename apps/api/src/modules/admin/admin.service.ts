@@ -100,6 +100,62 @@ export class AdminService {
     return this.playClipsRepository.findByShowId(showId);
   }
 
+  async getAllClips(): Promise<Array<{
+    id: string;
+    showId: string;
+    showTitle: string;
+    gameType: string;
+    clipStartMs: number;
+    clipEndMs: number;
+    gameOffsetMs: number;
+    status: string;
+    mediaUrl: string;
+    playCount: number;
+    createdAt: string;
+  }>> {
+    const rows = await this.db
+      .selectFrom('play_clips')
+      .innerJoin('shows', 'shows.id', 'play_clips.show_id')
+      .select([
+        'play_clips.id',
+        'play_clips.show_id',
+        'shows.title as show_title',
+        'play_clips.game_type',
+        'play_clips.clip_start_ms',
+        'play_clips.clip_end_ms',
+        'play_clips.game_offset_ms',
+        'play_clips.status',
+        'play_clips.media_url',
+        'play_clips.play_count',
+        'play_clips.created_at',
+      ])
+      .orderBy('play_clips.created_at', 'desc')
+      .execute();
+
+    return rows.map((r) => ({
+      id: r.id,
+      showId: r.show_id,
+      showTitle: r.show_title,
+      gameType: r.game_type,
+      clipStartMs: r.clip_start_ms,
+      clipEndMs: r.clip_end_ms,
+      gameOffsetMs: r.game_offset_ms,
+      status: r.status,
+      mediaUrl: r.media_url,
+      playCount: r.play_count,
+      createdAt: r.created_at.toISOString(),
+    }));
+  }
+
+  async deleteClip(showId: string, clipId: string): Promise<void> {
+    const clips = await this.playClipsRepository.findByShowId(showId);
+    const clip = clips.find((c) => c.id === clipId);
+    if (!clip) throw new NotFoundException(`Clip ${clipId} not found in show ${showId}`);
+    // Best-effort delete the clip video from storage
+    await this.storageService.deleteGameBundle(clip.mediaUrl).catch(() => {});
+    await this.playClipsRepository.deleteClip(clipId);
+  }
+
   async createShowClips(showId: string, ranges: ClipRangeInput[]): Promise<{ created: number }> {
     if (!ranges.length) throw new BadRequestException('No clip ranges provided');
 

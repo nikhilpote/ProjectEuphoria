@@ -1,0 +1,10 @@
+{
+  "id": "spot_difference",
+  "name": "Spot the Difference",
+  "version": "1.2.0",
+  "description": "Find the difference between two images — tap it on the bottom image",
+  "layout": "fullscreen",
+  "configSchema": {
+    "levelId": { "type": "string", "label": "Level name (configured in Games → Spot the Difference)" }
+  }
+}

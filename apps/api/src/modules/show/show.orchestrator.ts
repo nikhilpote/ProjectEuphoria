@@ -34,6 +34,7 @@ import { DB } from '../../database/schema';
 import { ShowRepository } from './show.repository';
 import { EconomyService } from '../economy/economy.service';
 import { GameRegistry } from '../games/game-registry.service';
+import { GamePackagesService } from '../game-packages/game-packages.service';
 import { StorageService } from '../../common/storage/storage.service';
 import type { ShowGateway } from '../../gateways/show/show.gateway';
 import type {
@@ -104,6 +105,7 @@ export class ShowOrchestrator {
     private readonly showRepository: ShowRepository,
     private readonly economyService: EconomyService,
     private readonly gameRegistry: GameRegistry,
+    private readonly gamePackagesService: GamePackagesService,
     private readonly storageService: StorageService,
   ) {}
 
@@ -314,6 +316,27 @@ export class ShowOrchestrator {
     const correct = new Set<string>();
     const incorrect = new Set<string>();
 
+    // For spot_difference: resolve the level once before the player loop so we
+    // can validate tap coordinates server-side without a per-player DB call.
+    let evalConfig = marker.config;
+    if (marker.gameType === 'spot_difference') {
+      const sd = (marker.config['spotDifference'] ?? marker.config) as Record<string, unknown>;
+      const levelId = sd['levelId'] as string | undefined;
+      if (levelId) {
+        const level = await this.gamePackagesService.getLevelCached('spot_difference', levelId);
+        if (level) {
+          evalConfig = {
+            ...marker.config,
+            _resolvedDifferences: level.config['differences'] as string,
+            _resolvedFindCount: (level.config['findCount'] as number | undefined) ?? 1,
+            _resolvedAspectRatio: (level.config['imageAspectRatio'] as number | undefined) ?? 1,
+          };
+        } else {
+          this.logger.warn(`spot_difference level "${levelId}" not found — falling back to client trust`);
+        }
+      }
+    }
+
     for (const userId of survivors) {
       const raw = answersHash[userId];
       if (!raw) {
@@ -327,7 +350,7 @@ export class ShowOrchestrator {
         incorrect.add(userId);
         continue;
       }
-      if (this.isAnswerCorrect(marker.gameType, marker.config, stored.answer as GameAnswer)) {
+      if (this.isAnswerCorrect(marker.gameType, evalConfig, stored.answer as GameAnswer)) {
         correct.add(userId);
       } else {
         incorrect.add(userId);

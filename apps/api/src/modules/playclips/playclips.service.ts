@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PlayClipsRepository } from './playclips.repository';
 import { EconomyService } from '../economy/economy.service';
+import { GamePackagesService } from '../game-packages/game-packages.service';
+import { validateSpotDifferenceTaps } from '../games/handlers/spot-difference.handler';
 import type { PlayClipSummary, ClipPlaySession } from '@euphoria/types';
 
 // Score formula: base 100 pts if correct, bonus up to 100 pts for speed
@@ -31,13 +33,7 @@ function evaluateAnswer(
     return String(qm.correctIndex) === String(submitted.selectedOptionId);
   }
 
-  if (gameType === 'number_dash') {
-    const nd = config['numberDash'] as { cutoffScore?: number } | undefined;
-    const submitted = answer as { score?: number } | null;
-    if (!nd || !submitted) return false;
-    return (submitted.score ?? 0) >= (nd.cutoffScore ?? 0);
-  }
-
+  // spot_difference is validated asynchronously — see submitAnswer()
   return false;
 }
 
@@ -46,6 +42,7 @@ export class PlayClipsService {
   constructor(
     private readonly playClipsRepository: PlayClipsRepository,
     private readonly economyService: EconomyService,
+    private readonly gamePackagesService: GamePackagesService,
   ) {}
 
   async listReady(page: number = 0, limit: number = 20, userId?: string): Promise<PlayClipSummary[]> {
@@ -79,11 +76,35 @@ export class PlayClipsService {
     const clip = await this.playClipsRepository.findById(session.clip_id);
     if (!clip) throw new NotFoundException(`Clip not found`);
 
-    const responseTimeMs = Date.now() - session.served_at;
-    const timeLimitMs = clip.clip_end_ms - clip.clip_start_ms;
     const config = (clip.config ?? {}) as Record<string, unknown>;
+    // timeLimitMs is the game round duration stored by the admin when clipping
+    const timeLimitMs = (config['timeLimitMs'] as number | undefined)
+      ?? (clip.clip_end_ms - clip.clip_start_ms - clip.game_offset_ms);
+    // responseTimeMs = time from when game question fired to when user answered (clientTs)
+    const gameStartedAt = session.served_at + clip.game_offset_ms;
+    const responseTimeMs = Math.min(Math.max(clientTs - gameStartedAt, 0), timeLimitMs);
 
-    const correct = evaluateAnswer(clip.game_type, config, answer);
+    // spot_difference: validate taps server-side against stored level differences
+    let correct: boolean;
+    if (clip.game_type === 'spot_difference') {
+      const levelId = config['levelId'] as string | undefined;
+      const submitted = answer as { taps?: Array<{ x: number; y: number }> } | null;
+      if (!levelId || !submitted?.taps?.length) {
+        correct = false;
+      } else {
+        const level = await this.gamePackagesService.getLevelCached('spot_difference', levelId);
+        if (!level) {
+          correct = false;
+        } else {
+          const diffs = JSON.parse((level.config['differences'] as string | undefined) ?? '[]') as Array<{ x: number; y: number; radius: number }>;
+          const findCount = (level.config['findCount'] as number | undefined) ?? 1;
+          const aspectRatio = (level.config['imageAspectRatio'] as number | undefined) ?? 1;
+          correct = validateSpotDifferenceTaps(diffs, findCount, submitted.taps, aspectRatio);
+        }
+      }
+    } else {
+      correct = evaluateAnswer(clip.game_type, config, answer);
+    }
     const score = calculateScore(correct, responseTimeMs, Math.max(timeLimitMs, 5000));
 
     await this.playClipsRepository.completeSession(sessionId, score, clientTs);
@@ -103,11 +124,38 @@ export class PlayClipsService {
     } else if (clip.game_type === 'quick_math') {
       const qm = config['quickMath'] as { options: string[]; correctIndex: number } | undefined;
       if (qm) correctAnswer = qm.options[qm.correctIndex] ?? null;
-    } else if (clip.game_type === 'number_dash') {
-      const nd = config['numberDash'] as { cutoffScore?: number } | undefined;
-      if (nd) correctAnswer = `Score ≥ ${nd.cutoffScore ?? 0}`;
     }
 
     return { correct, score, responseTimeMs, percentile, totalPlayers: total, correctAnswer };
+  }
+
+  /**
+   * Picks the next unseen clip for this user and creates a play session.
+   * Returns null when the user has completed every available clip.
+   */
+  async prepareNextSession(userId: string): Promise<{
+    session: ClipPlaySession;
+    gameType: string;
+    config: Record<string, unknown>;
+    timeLimitMs: number;
+    gameOffsetMs: number;
+    mediaUrl: string;
+    clipDurationMs: number;
+    playCount: number;
+  } | null> {
+    const clip = await this.playClipsRepository.findNextUnseen(userId);
+    if (!clip) return null;
+    const servedAt = Date.now();
+    const session = await this.playClipsRepository.createSession(userId, clip.id, servedAt);
+    return {
+      session,
+      gameType: clip.game_type,
+      config: (clip.config ?? {}) as Record<string, unknown>,
+      timeLimitMs: (config['timeLimitMs'] as number | undefined) ?? (clip.clip_end_ms - clip.clip_start_ms - clip.game_offset_ms),
+      gameOffsetMs: clip.game_offset_ms,
+      mediaUrl: clip.media_url,
+      clipDurationMs: clip.clip_end_ms - clip.clip_start_ms,
+      playCount: clip.play_count,
+    };
   }
 }

@@ -138,6 +138,33 @@ export async function createShowClips(
   return handleResponse<{ created: number }>(res);
 }
 
+export async function deleteShowClip(showId: string, clipId: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/admin/shows/${showId}/clips/${clipId}`, {
+    method: 'DELETE',
+  });
+  if (res.status === 204) return;
+  await handleResponse<void>(res);
+}
+
+export interface AdminClip {
+  id: string;
+  showId: string;
+  showTitle: string;
+  gameType: string;
+  clipStartMs: number;
+  clipEndMs: number;
+  gameOffsetMs: number;
+  status: string;
+  mediaUrl: string;
+  playCount: number;
+  createdAt: string;
+}
+
+export async function getAllClips(): Promise<AdminClip[]> {
+  const res = await fetch(`${BASE_URL}/admin/clips`);
+  return handleResponse<AdminClip[]>(res);
+}
+
 // ─── Trivia questions ─────────────────────────────────────────────────────────
 
 export interface TriviaQuestion {

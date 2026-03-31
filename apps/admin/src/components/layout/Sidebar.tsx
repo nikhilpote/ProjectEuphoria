@@ -9,6 +9,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: '▣' },
   { label: 'Shows', href: '/shows', icon: '◈' },
+  { label: 'PlayClips', href: '/playclips', icon: '▶' },
   { label: 'Games', href: '/games', icon: '⊞' },
   { label: 'LiveOps', href: '/liveops', icon: '◉' },
   { label: 'Reward Rules', href: '/reward-rules', icon: '◎' },

@@ -1,16 +1,21 @@
-import { Injectable, Logger, BadRequestException, NotFoundException, Inject } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException, Inject, ConflictException } from '@nestjs/common';
 import { promises as fs } from 'fs';
 import { lookup } from 'mime-types';
 import AdmZip from 'adm-zip';
 import Redis from 'ioredis';
-import { GamePackagesRepository, GamePackageRow } from './game-packages.repository';
+import { GamePackagesRepository, GamePackageRow, GameLevelRow } from './game-packages.repository';
 import { StorageService } from '../../common/storage/storage.service';
 import { REDIS_CLIENT } from '../../database/redis.module';
-import type { GamePackage, GameManifest } from '@euphoria/types';
+import type { GamePackage, GameManifest, GameLevel } from '@euphoria/types';
 
 /** TTL in seconds for the enabled game packages cache entry */
 const GAME_PACKAGES_CACHE_TTL_S = 300;
 const GAME_PACKAGES_CACHE_KEY = 'game_packages:enabled';
+
+/** TTL for individual level cache — 10 min; invalidated on any write */
+const LEVEL_CACHE_TTL_S = 600;
+const levelCacheKey = (packageId: string, name: string) =>
+  `game_level:${packageId}:${name}`;
 
 @Injectable()
 export class GamePackagesService {
@@ -25,11 +30,23 @@ export class GamePackagesService {
   async uploadPackage(zipLocalPath: string): Promise<GamePackage> {
     const zip = new AdmZip(zipLocalPath);
 
-    // Extract and validate manifest.json
-    const manifestEntry = zip.getEntry('manifest.json');
+    // Find manifest.json — handle both flat ZIPs (manifest.json at root)
+    // and folder ZIPs where zip -r game/ produces game/manifest.json entries.
+    let manifestEntry = zip.getEntry('manifest.json');
+    let stripPrefix = '';
+    if (!manifestEntry) {
+      // Look for manifest.json inside a single top-level folder (e.g. trivia/manifest.json)
+      manifestEntry = zip.getEntries().find(
+        (e) => !e.isDirectory && /^[^/]+\/manifest\.json$/.test(e.entryName),
+      ) ?? null;
+      if (manifestEntry) {
+        stripPrefix = manifestEntry.entryName.replace('manifest.json', ''); // e.g. "trivia/"
+      }
+    }
+
     if (!manifestEntry) {
       await fs.unlink(zipLocalPath).catch(() => undefined);
-      throw new BadRequestException('ZIP must contain a manifest.json at the root');
+      throw new BadRequestException('ZIP must contain a manifest.json');
     }
 
     let manifest: GameManifest;
@@ -47,17 +64,23 @@ export class GamePackagesService {
       );
     }
 
-    // Upload all files to S3
+    // Upload all files to S3, stripping the top-level folder prefix if present
     const uploadedUrls = new Map<string, string>();
     const entries = zip.getEntries().filter((entry) => !entry.isDirectory);
 
     await Promise.all(
       entries.map(async (entry) => {
-        const mimeType = lookup(entry.entryName) || 'application/octet-stream';
-        const key = `games/${manifest.id}/v${manifest.version}/${entry.entryName}`;
+        const relativeName = stripPrefix
+          ? entry.entryName.startsWith(stripPrefix)
+            ? entry.entryName.slice(stripPrefix.length)
+            : entry.entryName
+          : entry.entryName;
+        if (!relativeName) return; // skip the root folder entry itself
+        const mimeType = lookup(relativeName) || 'application/octet-stream';
+        const key = `games/${manifest.id}/v${manifest.version}/${relativeName}`;
         const url = await this.storageService.uploadBuffer(entry.getData(), key, mimeType);
-        uploadedUrls.set(entry.entryName, url);
-        this.logger.debug(`Uploaded ${entry.entryName} -> ${url}`);
+        uploadedUrls.set(relativeName, url);
+        this.logger.debug(`Uploaded ${relativeName} -> ${url}`);
       }),
     );
 
@@ -78,7 +101,9 @@ export class GamePackagesService {
     );
 
     // Upsert: if package with this id already exists, delete it first
+    // Preserve is_enabled so re-uploading an active game stays active
     const existing = await this.repository.findById(manifest.id);
+    const wasEnabled = existing?.is_enabled ?? false;
     if (existing) {
       await this.repository.delete(manifest.id);
     }
@@ -92,6 +117,12 @@ export class GamePackagesService {
       bundleUrl,
       thumbnailUrl,
     });
+
+    // Restore enabled state and always invalidate cache so clients get new bundleUrl immediately
+    if (wasEnabled) {
+      await this.repository.setEnabled(manifest.id, true);
+    }
+    await this.invalidateEnabledCache();
 
     this.logger.log(`Game package uploaded: id=${manifest.id} version=${manifest.version}`);
 
@@ -135,9 +166,93 @@ export class GamePackagesService {
     if (!existing) {
       throw new NotFoundException(`Game package "${id}" not found`);
     }
+
+    // Delete all S3 objects for this package version (best-effort — never block the delete)
+    if (existing.bundle_url) {
+      await this.storageService.deleteGameBundle(existing.bundle_url).catch((err: Error) =>
+        this.logger.warn(`S3 cleanup failed for package ${id}: ${err.message}`),
+      );
+    }
+
     await this.repository.delete(id);
     await this.invalidateEnabledCache();
     this.logger.log(`Game package deleted: id=${id}`);
+  }
+
+  // ── Level CRUD ────────────────────────────────────────────────────────────
+
+  /**
+   * Fetch a single level by name with Redis caching.
+   * Returns null instead of throwing — callers decide how to handle missing levels.
+   * Hot path: called on every spot_difference PlayClip submission.
+   */
+  async getLevelCached(gamePackageId: string, levelName: string): Promise<GameLevel | null> {
+    const key = levelCacheKey(gamePackageId, levelName);
+    const cached = await this.redis.get(key);
+    if (cached) return JSON.parse(cached) as GameLevel;
+
+    const row = await this.repository.findLevel(gamePackageId, levelName);
+    if (!row) return null;
+
+    const dto = this.levelToDto(row);
+    await this.redis.set(key, JSON.stringify(dto), 'EX', LEVEL_CACHE_TTL_S);
+    return dto;
+  }
+
+  private async invalidateLevelCache(gamePackageId: string, name: string): Promise<void> {
+    await this.redis.del(levelCacheKey(gamePackageId, name));
+  }
+
+  async getLevels(gamePackageId: string): Promise<GameLevel[]> {
+    const pkg = await this.repository.findById(gamePackageId);
+    if (!pkg) throw new NotFoundException(`Game package "${gamePackageId}" not found`);
+    const rows = await this.repository.findLevelsByPackage(gamePackageId);
+    return rows.map((r) => this.levelToDto(r));
+  }
+
+  async getLevel(gamePackageId: string, levelName: string): Promise<GameLevel> {
+    const row = await this.repository.findLevel(gamePackageId, levelName);
+    if (!row) throw new NotFoundException(`Level "${levelName}" not found in "${gamePackageId}"`);
+    return this.levelToDto(row);
+  }
+
+  async createLevel(gamePackageId: string, name: string, config: Record<string, unknown>): Promise<GameLevel> {
+    const pkg = await this.repository.findById(gamePackageId);
+    if (!pkg) throw new NotFoundException(`Game package "${gamePackageId}" not found`);
+    const existing = await this.repository.findLevel(gamePackageId, name);
+    if (existing) throw new BadRequestException(`Level "${name}" already exists in "${gamePackageId}"`);
+    const row = await this.repository.createLevel({ gamePackageId, name, config });
+    await this.invalidateLevelCache(gamePackageId, name);
+    return this.levelToDto(row);
+  }
+
+  async updateLevel(gamePackageId: string, levelId: string, patch: { name?: string; config?: Record<string, unknown> }): Promise<GameLevel> {
+    const row = await this.repository.updateLevel(levelId, patch);
+    // Invalidate both old name (if renamed) and new name
+    await this.invalidateLevelCache(gamePackageId, row.name);
+    if (patch.name && patch.name !== row.name) {
+      await this.invalidateLevelCache(gamePackageId, patch.name);
+    }
+    return this.levelToDto(row);
+  }
+
+  async deleteLevel(gamePackageId: string, levelId: string): Promise<void> {
+    // Fetch name before deleting so we can invalidate the cache
+    const rows = await this.repository.findLevelsByPackage(gamePackageId);
+    const target = rows.find((r) => r.id === levelId);
+    await this.repository.deleteLevel(levelId);
+    if (target) await this.invalidateLevelCache(gamePackageId, target.name);
+  }
+
+  private levelToDto(row: GameLevelRow): GameLevel {
+    return {
+      id: row.id,
+      gamePackageId: row.game_package_id,
+      name: row.name,
+      config: row.config as Record<string, unknown>,
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString(),
+    };
   }
 
   private rowToDto(row: GamePackageRow): GamePackage {

@@ -31,6 +31,24 @@ export class PlayClipsRepository {
     }));
   }
 
+  /** Returns the next clip this user hasn't completed, ordered by recency. */
+  async findNextUnseen(userId: string) {
+    return this.db
+      .selectFrom('play_clips')
+      .selectAll()
+      .where('status', '=', 'ready')
+      .where('id', 'not in', (qb) =>
+        qb
+          .selectFrom('clip_play_sessions')
+          .select('clip_id')
+          .where('user_id', '=', userId)
+          .where('completed_at', 'is not', null),
+      )
+      .orderBy('created_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+  }
+
   async findById(id: string) {
     return this.db
       .selectFrom('play_clips')
@@ -76,6 +94,10 @@ export class PlayClipsRepository {
       status: r.status,
       playCount: r.play_count,
     }));
+  }
+
+  async deleteClip(clipId: string): Promise<void> {
+    await this.db.deleteFrom('play_clips').where('id', '=', clipId).execute();
   }
 
   async createClip(input: {
