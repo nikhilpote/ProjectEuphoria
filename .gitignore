@@ -20,6 +20,11 @@ out/
 !.env.staging.template
 .deploy-hashes
 
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+
 # Uploads / temp files
 apps/api/uploads/
 
