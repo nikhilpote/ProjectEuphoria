@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Knife Hit</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+    :root {
+      --bg: #1a0a00;
+      --accent: #F59E0B;
+      --text: #FFFFFF;
+      --muted: #9CA3AF;
+      --danger: #EF4444;
+      --success: #10B981;
+    }
+
+    html, body {
+      background: #000;
+      height: 100%;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    #game-wrapper {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+    }
+
+    #hud {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 12px;
+      flex-shrink: 0;
+      background: rgba(0,0,0,0.6);
+    }
+
+    #timer-track {
+      flex: 1;
+      height: 5px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    #timer-fill {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, var(--accent), #FCD34D);
+      border-radius: 3px;
+      transform-origin: left;
+      transition: transform 0.25s linear, background 0.4s;
+    }
+
+    #timer-fill.urgent { background: linear-gradient(90deg, var(--danger), #F97316); }
+
+    #timer-text {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      min-width: 28px;
+      text-align: right;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #timer-text.urgent { color: var(--danger); }
+
+    #canvas-wrap {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    #gameCanvas {
+      display: block;
+      touch-action: none;
+    }
+
+    /* Result banner overlay */
+    #result-banner {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.85);
+      border: 2px solid var(--accent);
+      border-radius: 16px;
+      padding: 24px 40px;
+      text-align: center;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+      z-index: 100;
+      min-width: 220px;
+    }
+
+    #result-banner.show { display: block; }
+
+    #result-title {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    #result-title.success { color: var(--success); }
+    #result-title.fail { color: var(--danger); }
+
+    #result-sub {
+      font-size: 14px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+<div id="game-wrapper">
+  <div id="hud">
+    <div id="timer-track"><div id="timer-fill"></div></div>
+    <div id="timer-text">--</div>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="gameCanvas"></canvas>
+    <div id="result-banner">
+      <div id="result-title">GAME OVER</div>
+      <div id="result-sub">Score: <span id="result-score">0</span></div>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+
+// ─── Utility ────────────────────────────────────────────────────────────────
+
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+function randInt(a, b) { return Math.floor(Math.random() * (b - a + 1)) + a; }
+function degToRad(d) { return d * Math.PI / 180; }
+function radToDeg(r) { return r * 180 / Math.PI; }
+
+// ─── Bridge ──────────────────────────────────────────────────────────────────
+
+function postToNative(msg) {
+  try {
+    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      window.ReactNativeWebView.postMessage(JSON.stringify(msg));
+    } else if (window.parent && window.parent !== window) {
+      window.parent.postMessage(JSON.stringify(msg), '*');
+    }
+  } catch(e) {}
+}
+
+// ─── Config / Payload ────────────────────────────────────────────────────────
+// Level data comes from server via GAME_INIT — no embedded levels.
+
+var config = {
+  wheelSprite: 'level1spin-sheet0.png',
+  rotationType: 'rotate',
+  rotationSpeed: 180,
+  oscillationPeriod: 5,
+  oscillationMagnitude: 250,
+  throwCount: 7,
+  preplacedKnives: [],
+  apples: [],
+  timeLimitMs: 30000,
+  knifeSkin: 1
+};
+
+function applyPayload(p) {
+  if (!p) return;
+  // Unwrap: WebView bridge wraps data as { payload: {...}, timeLimitMs }
+  if (p.payload) {
+    if (typeof p.timeLimitMs === 'number') config.timeLimitMs = p.timeLimitMs;
+    p = p.payload;
+  }
+  // Server sends resolved level config directly — apply all fields
+  if (p.wheelSprite) config.wheelSprite = p.wheelSprite;
+  if (p.rotationType) config.rotationType = p.rotationType;
+  if (typeof p.rotationSpeed === 'number') config.rotationSpeed = p.rotationSpeed;
+  if (typeof p.oscillationPeriod === 'number') config.oscillationPeriod = p.oscillationPeriod;
+  if (typeof p.oscillationMagnitude === 'number') config.oscillationMagnitude = p.oscillationMagnitude;
+  if (typeof p.throwCount === 'number') config.throwCount = p.throwCount;
+  if (p.preplacedKnives) config.preplacedKnives = p.preplacedKnives;
+  if (p.apples) config.apples = p.apples;
+  if (typeof p.timeLimitMs === 'number') config.timeLimitMs = p.timeLimitMs;
+  if (typeof p.knifeSkin === 'number') config.knifeSkin = p.knifeSkin;
+}
+
+// Channel 1: URL hash
+try {
+  var hash = window.location.hash.replace('#', '');
+  if (hash) {
+    var hashData = JSON.parse(decodeURIComponent(hash));
+    postToNative({ type: '__CONSOLE__', level: 'log', msg: '[KH] hash data: ' + JSON.stringify(hashData).substring(0, 500) });
+    applyPayload(hashData);
+  }
+} catch(e) { postToNative({ type: '__CONSOLE__', level: 'error', msg: '[KH] hash parse error: ' + e }); }
+
+// Channel 2: global
+try {
+  if (window.__EUPHORIA_GAME__) {
+    postToNative({ type: '__CONSOLE__', level: 'log', msg: '[KH] global data: ' + JSON.stringify(window.__EUPHORIA_GAME__).substring(0, 500) });
+    applyPayload(window.__EUPHORIA_GAME__);
+  }
+} catch(e) {}
+
+// Channel 3: message event — may arrive after game starts, so re-init if needed
+window.addEventListener('message', function(e) {
+  try {
+    var d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+    if (d && (d.type === 'GAME_CONFIG' || d.type === 'GAME_INIT')) {
+      applyPayload(d.payload || d);
+      // Re-init if game already started (late config from WebView bridge)
+      if (gameState !== STATE_LOADING) {
+        initGame();
+      }
+    }
+  } catch(ex) {}
+});
+
+// ─── Canvas Setup ────────────────────────────────────────────────────────────
+
+var DESIGN_W = 480;
+var DESIGN_H = 854;
+
+var canvas = document.getElementById('gameCanvas');
+var ctx = canvas.getContext('2d');
+var scale = 1;
+
+function resizeCanvas() {
+  var wrap = document.getElementById('canvas-wrap');
+  var ww = wrap.clientWidth;
+  var wh = wrap.clientHeight;
+  var scaleW = ww / DESIGN_W;
+  var scaleH = wh / DESIGN_H;
+  scale = Math.min(scaleW, scaleH);
+  canvas.width = Math.round(DESIGN_W * scale);
+  canvas.height = Math.round(DESIGN_H * scale);
+  canvas.style.width = canvas.width + 'px';
+  canvas.style.height = canvas.height + 'px';
+}
+
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// ─── Asset Loading ───────────────────────────────────────────────────────────
+
+var IMG_DIR = '../images/';
+var images = {};
+var loadCount = 0;
+var loadTotal = 0;
+var loadError = 0;
+
+function loadImage(key, src) {
+  loadTotal++;
+  var img = new Image();
+  img.onload = function() { images[key] = img; loadCount++; checkAllLoaded(); };
+  img.onerror = function() { loadCount++; loadError++; checkAllLoaded(); };
+  img.src = IMG_DIR + src;
+}
+
+var ASSET_LIST = [
+  ['bg',       'sprite-sheet0.png'],
+  ['center',   'sprite26-sheet0.png'],
+  ['knife0',   'knife-sheet0.png'],
+  ['knife1',   'knife-sheet1.png'],
+  ['knife2',   'knife-sheet2.png'],
+  ['apple',    'sprite16-sheet0.png'],
+  ['ammoOn',   'shot1-sheet0.png'],
+  ['ammoOff',  'shot1-sheet1.png'],
+  ['piece1',   'piece1-sheet0.png'],
+  ['piece2',   'piece2-sheet0.png'],
+  ['piece4',   'piece4-sheet0.png'],
+  ['piece5',   'piece5-sheet0.png'],
+  ['piece6',   'piece6-sheet0.png']
+];
+
+for (var ai = 0; ai < ASSET_LIST.length; ai++) {
+  loadImage(ASSET_LIST[ai][0], ASSET_LIST[ai][1]);
+}
+
+// Wheel loaded separately (may vary by config)
+function loadWheelSprite() {
+  loadTotal++;
+  var img = new Image();
+  img.onload = function() { images['wheel'] = img; loadCount++; checkAllLoaded(); };
+  img.onerror = function() { loadCount++; loadError++; checkAllLoaded(); };
+  img.src = IMG_DIR + config.wheelSprite;
+}
+loadWheelSprite();
+
+// ─── Game State ──────────────────────────────────────────────────────────────
+
+var STATE_LOADING  = 0;
+var STATE_PLAYING  = 1;
+var STATE_GAMEOVER = 2;
+var STATE_WIN      = 3;
+
+var wheelDestroyed = false;
+
+var gameState = STATE_LOADING;
+var submitted  = false;
+
+// Wheel
+var wheelX   = 240;
+var wheelY   = 280;
+var wheelR   = 125;   // radius for collision (center circle ~72.5)
+var wheelAngle = 0;   // degrees
+var sineTime   = 0;
+
+// Center circle collision radius (sprite26 drawn at 145x145, so ~72.5px)
+var centerR = 72;
+
+// Thrown knife
+var knife = null;        // active in-flight knife
+var knivesOnWheel = [];  // knives stuck to wheel
+var pieces = [];         // explosion pieces on game over
+
+// Apples — pre-placed per level, NOT dynamic
+var apples = [];  // [{stuckAngle, stuckDist, collected}]
+
+// Score
+var shotsLeft  = 0;
+var shots      = 0;    // knives successfully stuck
+var fruits     = 0;
+var gameOver   = 0;
+
+// Timer (Euphoria HUD)
+var timeLimitMs  = 30000;
+var timeElapsedMs = 0;
+var timerStarted  = false;
+
+// Knife geometry (from sprite sheet, frame 33x149)
+var KNIFE_SW   = 33;
+var KNIFE_SH   = 149;
+var KNIFE_SX   = 1;
+var KNIFE_SY   = 1;
+var KNIFE_DW   = 33;
+var KNIFE_DH   = 149;
+
+// Starting position for throw (bottom of screen)
+var KNIFE_START_X = 240.5;
+var KNIFE_START_Y = 646;
+
+// ─── Knife Object ────────────────────────────────────────────────────────────
+
+function makeKnife(x, y) {
+  return {
+    x: x,
+    y: y,
+    velY: 0,        // starts at 0, accel upward
+    accel: -20000,  // px/s^2 upward (negative = up in canvas coords)
+    accel2: 3000,   // counterforce accel (bounce on fail)
+    state: 'idle',  // 'idle' | 'flying' | 'stuck' | 'bouncing'
+    angle: 0,       // rotation degrees
+    spinSpeed: 0,   // deg/s for bouncing
+    stuckAngle: 0,  // angle relative to wheel when stuck
+    stuckDist:  0,  // distance from wheel center when stuck
+    sheetIdx: 0     // which knife sheet
+  };
+}
+
+// Level knife skin: Anim1-7 → sheet0, Anim8-14 → sheet1, Anim15-20 → sheet2
+// Frame index within sheet: (animNum-1) % 7, crop x = 1 + frameIdx * 35
+var levelSkinSheet = 0;    // which sheet (0,1,2)
+var levelSkinFrame = 0;    // frame index within sheet (0-6)
+var levelSkinSX    = 1;    // crop X for this skin
+
+function setLevelSkin(skinNum) {
+  // skinNum = 1-20 (Anim1-Anim20), default 1
+  if (!skinNum || skinNum < 1) skinNum = 1;
+  if (skinNum > 20) skinNum = 20;
+  if (skinNum <= 7) {
+    levelSkinSheet = 0;
+    levelSkinFrame = skinNum - 1;
+  } else if (skinNum <= 14) {
+    levelSkinSheet = 1;
+    levelSkinFrame = skinNum - 8;
+  } else {
+    levelSkinSheet = 2;
+    levelSkinFrame = skinNum - 15;
+  }
+  levelSkinSX = 1 + levelSkinFrame * 35;
+}
+
+function spawnKnife() {
+  knife = makeKnife(KNIFE_START_X, KNIFE_START_Y);
+  knife.sheetIdx = levelSkinSheet;
+}
+
+// ─── Apple Object ────────────────────────────────────────────────────────────
+
+function buildApples() {
+  apples = [];
+  var cfgApples = config.apples || [];
+  for (var ai = 0; ai < cfgApples.length; ai++) {
+    var a = cfgApples[ai];
+    // C2 stores absolute world coords. Pin preserves offset from wheel center.
+    // Config can provide either {x,y} (absolute, wheel at 240,280) or {angleDeg, dist}
+    var offX, offY;
+    if (typeof a.x === 'number' && typeof a.y === 'number') {
+      // Absolute coords from C2 layout — subtract wheel center to get offset
+      offX = a.x - wheelX;
+      offY = a.y - wheelY;
+    } else {
+      // Angle + distance format
+      var dist = a.dist || 150;
+      var rad = degToRad(a.angleDeg || 0);
+      offX = Math.cos(rad) * dist;
+      offY = Math.sin(rad) * dist;
+    }
+    apples.push({
+      offX: offX,
+      offY: offY,
+      collected: false,
+      x: 0,
+      y: 0
+    });
+  }
+}
+
+// ─── Explosion Pieces ────────────────────────────────────────────────────────
+
+var PIECE_KEYS = ['piece1', 'piece2', 'piece4', 'piece5', 'piece6'];
+
+function spawnAppleBreak(x, y) {
+  // C2: apple spawns t52 (rayo), t53 (piece2), t54 (piece6) at its position
+  var breakKeys = ['piece2', 'piece6'];
+  for (var bi = 0; bi < breakKeys.length; bi++) {
+    var angle = randInt(0, 360);
+    var rad = degToRad(angle);
+    var speed = 300 + randInt(0, 200);
+    pieces.push({
+      key: breakKeys[bi],
+      x: x, y: y,
+      vx: Math.cos(rad) * speed,
+      vy: Math.sin(rad) * speed - 200,
+      angle: randInt(0, 360),
+      spin: randInt(-400, 400),
+      alpha: 1
+    });
+  }
+}
+
+function spawnPieces(x, y) {
+  pieces = [];
+  // C2: pieces fly off at bullet speed -2000 (upward) then 1200 (fall back)
+  // Spread them in a radial pattern
+  for (var pi = 0; pi < PIECE_KEYS.length; pi++) {
+    var angle = (pi / PIECE_KEYS.length) * 360 + randInt(-30, 30);
+    var rad   = degToRad(angle);
+    var speed = 800 + randInt(0, 400);
+    pieces.push({
+      key: PIECE_KEYS[pi],
+      x: x,
+      y: y,
+      vx: Math.cos(rad) * speed,
+      vy: -Math.abs(Math.sin(rad) * speed) - 200,  // initial upward burst
+      angle: randInt(0, 360),
+      spin: randInt(-500, 500),
+      alpha: 1
+    });
+  }
+  // Also add stuck knives as flying pieces
+  for (var ki = 0; ki < knivesOnWheel.length; ki++) {
+    var wk = knivesOnWheel[ki];
+    var wrad = degToRad(wheelAngle + wk.stuckAngle);
+    var kx = wheelX + Math.cos(wrad) * wk.stuckDist;
+    var ky = wheelY + Math.sin(wrad) * wk.stuckDist;
+    pieces.push({
+      key: 'knife_' + wk.sheetIdx,
+      x: kx,
+      y: ky,
+      vx: Math.cos(wrad) * 600 + randInt(-100, 100),
+      vy: -400 + randInt(-200, 0),
+      angle: wheelAngle + wk.stuckAngle - 90,
+      spin: randInt(-400, 400),
+      alpha: 1,
+      isKnife: true,
+      sheetIdx: wk.sheetIdx
+    });
+  }
+}
+
+// ─── Pre-placed Knives ────────────────────────────────────────────────────────
+
+function buildPreplacedKnives() {
+  knivesOnWheel = [];
+  var pks = config.preplacedKnives;
+  for (var ki = 0; ki < pks.length; ki++) {
+    var angleDeg = pks[ki].angleDeg;
+    var rad = degToRad(angleDeg);
+    var dist = wheelR + KNIFE_DH * 0.5 - 10;
+    knivesOnWheel.push({
+      stuckAngle: angleDeg,
+      stuckDist: dist,
+      sheetIdx: levelSkinSheet,
+      isPreplaced: true
+    });
+  }
+}
+
+// ─── Game Init ───────────────────────────────────────────────────────────────
+
+function initGame() {
+  postToNative({ type: '__CONSOLE__', level: 'log', msg: '[KH] initGame config: speed=' + config.rotationSpeed + ' type=' + config.rotationType + ' throws=' + config.throwCount + ' wheel=' + config.wheelSprite });
+  gameState  = STATE_PLAYING;
+  submitted  = false;
+  gameOver   = 0;
+  shots      = 0;
+  fruits     = 0;
+  pieces     = [];
+  wheelDestroyed = false;
+  wheelAngle = 0;
+  sineTime   = 0;
+  timeElapsedMs = 0;
+  timerStarted  = false;
+
+  timeLimitMs = config.timeLimitMs;
+  shotsLeft   = config.throwCount;
+
+  setLevelSkin(config.knifeSkin || 1);
+  buildPreplacedKnives();
+  buildApples();
+  spawnKnife();
+  updateHUD(1);
+  document.getElementById('result-banner').classList.remove('show');
+  postToNative({ type: 'GAME_READY', payload: { gameType: 'knife_at_center' } });
+}
+
+// ─── HUD ─────────────────────────────────────────────────────────────────────
+
+function updateHUD(frac) {
+  var fill = document.getElementById('timer-fill');
+  var text = document.getElementById('timer-text');
+  var secsLeft = Math.ceil(((1 - frac) < 0 ? 0 : (timeLimitMs - timeElapsedMs)) / 1000);
+  if (secsLeft < 0) secsLeft = 0;
+  fill.style.transform = 'scaleX(' + frac + ')';
+  text.textContent = secsLeft;
+  if (frac < 0.2 || secsLeft <= 5) {
+    fill.classList.add('urgent');
+    text.classList.add('urgent');
+  } else {
+    fill.classList.remove('urgent');
+    text.classList.remove('urgent');
+  }
+}
+
+// ─── Result Banner ───────────────────────────────────────────────────────────
+
+function showResult(win) {
+  var banner = document.getElementById('result-banner');
+  var title  = document.getElementById('result-title');
+  var scorel = document.getElementById('result-score');
+  title.textContent = win ? 'LEVEL CLEAR!' : 'GAME OVER';
+  title.className   = win ? 'success' : 'fail';
+  scorel.textContent = shots + ' knives | ' + fruits + ' apples';
+  banner.classList.add('show');
+}
+
+// ─── Submit ───────────────────────────────────────────────────────────────────
+
+function submitResult(win) {
+  if (submitted) return;
+  submitted = true;
+  showResult(win);
+  postToNative({
+    type: 'SUBMIT_ANSWER',
+    payload: {
+      correct: win,
+      score: shots,
+      fruits: fruits,
+      knivesStuck: shots,
+      timeTakenMs: timeElapsedMs
+    }
+  });
+}
+
+// ─── Input ────────────────────────────────────────────────────────────────────
+
+function handleThrow() {
+  if (gameState !== STATE_PLAYING) return;
+  if (!knife || knife.state !== 'idle') return;
+  if (shotsLeft <= 0) return;
+  knife.state = 'flying';
+  knife.velY  = 0;
+  shotsLeft--;
+  if (!timerStarted) { timerStarted = true; }
+}
+
+canvas.addEventListener('touchend', function(e) {
+  e.preventDefault();
+  handleThrow();
+}, { passive: false });
+
+canvas.addEventListener('click', function(e) {
+  e.preventDefault();
+  handleThrow();
+});
+
+// ─── Collision ────────────────────────────────────────────────────────────────
+
+function dist2(ax, ay, bx, by) {
+  var dx = ax - bx;
+  var dy = ay - by;
+  return dx*dx + dy*dy;
+}
+
+function knifeStuck() {
+  // Knife drawn centered on its midpoint. Blade tip = -KNIFE_DH/2, handle end = +KNIFE_DH/2.
+  // We want blade tip to embed ~10px inside the wheel edge, handle sticking outward.
+  // Tip position from center = stuckDist - KNIFE_DH/2 → should equal wheelR - 10.
+  // So stuckDist = wheelR - 10 + KNIFE_DH/2 = wheelR + KNIFE_DH/2 - 10
+  var stuckDist = wheelR + KNIFE_DH * 0.5 - 10;
+
+  // Direction: straight up (knife came from below), so the angle from wheel center
+  // to the knife tip entry point.
+  var dx = knife.x - wheelX;
+  // knife tip y = knife.y - KNIFE_DH * 0.5
+  var tipY = knife.y - KNIFE_DH * 0.5;
+  var dy   = tipY - wheelY;
+  var absAngle = radToDeg(Math.atan2(dy, dx));
+  var relAngle = absAngle - wheelAngle;
+
+  var stuck = {
+    stuckAngle: relAngle,
+    stuckDist: stuckDist,
+    sheetIdx: knife.sheetIdx,
+    isPreplaced: false
+  };
+  knivesOnWheel.push(stuck);
+  shots++;
+
+  // Spawn new knife if shots remain
+  if (shotsLeft > 0) {
+    spawnKnife();
+  } else {
+    knife = null;
+  }
+}
+
+function knifeHitHazard() {
+  gameOver = 1;
+  knife.state = 'bouncing';
+  knife.spinSpeed = 1200;
+  knife.velY = 0;
+  knife.accel = 3000; // fall away
+  // NO wheel break on game over — wheel stays, knife bounces off
+}
+
+function checkCollisions() {
+  if (!knife || knife.state !== 'flying') return;
+
+  var kx = knife.x;
+  var ky = knife.y - KNIFE_DH * 0.5; // blade tip (knife drawn centered, blade points up)
+
+  // Hit center circle → STICK
+  var d2center = dist2(kx, ky, wheelX, wheelY);
+  if (d2center < centerR * centerR) {
+    knife.state = 'stuck';
+    knifeStuck();
+    // Check win condition — all knives stuck, wheel breaks apart
+    console.log('[KH] knife stuck, shotsLeft=' + shotsLeft + ', knife=' + !!knife);
+    if (shotsLeft <= 0 && !knife) {
+      console.log('[KH] WIN — wheel destroyed');
+      wheelDestroyed = true;
+      spawnPieces(wheelX, wheelY);
+      setTimeout(function() { submitResult(true); }, 1200);
+    }
+    return;
+  }
+
+  // Hit apples — apple breaks into pieces (t52 rayo, t53 piece2, t54 piece6)
+  for (var ai = 0; ai < apples.length; ai++) {
+    if (apples[ai].collected) continue;
+    if (dist2(kx, ky, apples[ai].x, apples[ai].y) < 30 * 30) {
+      apples[ai].collected = true;
+      fruits += randInt(2, 10);
+      // Spawn break pieces at apple position
+      spawnAppleBreak(apples[ai].x, apples[ai].y);
+      // knife still flies, check center next frame
+      return;
+    }
+  }
+
+  // Hit hazard knives on wheel
+  for (var hi = 0; hi < knivesOnWheel.length; hi++) {
+    var hk = knivesOnWheel[hi];
+    var rad = degToRad(wheelAngle + hk.stuckAngle);
+    var hx  = wheelX + Math.cos(rad) * hk.stuckDist;
+    var hy  = wheelY + Math.sin(rad) * hk.stuckDist;
+    // Stuck knife center is at hx,hy. Check both center and handle tip (outward).
+    // Handle tip = further from wheel center by ~KNIFE_DH*0.4
+    var hradx = wheelX + Math.cos(rad) * (hk.stuckDist + KNIFE_DH * 0.4);
+    var hrady = wheelY + Math.sin(rad) * (hk.stuckDist + KNIFE_DH * 0.4);
+    // Also check blade embed point (closer to center)
+    var hbladex = wheelX + Math.cos(rad) * (hk.stuckDist - KNIFE_DH * 0.4);
+    var hbladey = wheelY + Math.sin(rad) * (hk.stuckDist - KNIFE_DH * 0.4);
+    if (dist2(kx, ky, hx, hy) < 20 * 20 || dist2(kx, ky, hradx, hrady) < 16 * 16 || dist2(kx, ky, hbladex, hbladey) < 16 * 16) {
+      knifeHitHazard();
+      return;
+    }
+  }
+}
+
+// ─── Main Update Loop ─────────────────────────────────────────────────────────
+
+var lastTime = 0;
+
+function update(now) {
+  var dt = (now - lastTime) / 1000;
+  if (dt > 0.1) dt = 0.1;
+  lastTime = now;
+
+  if (gameState !== STATE_PLAYING) {
+    render();
+    requestAnimationFrame(update);
+    return;
+  }
+
+  // Timer
+  if (timerStarted && !submitted) {
+    timeElapsedMs += dt * 1000;
+    var frac = clamp(1 - timeElapsedMs / timeLimitMs, 0, 1);
+    updateHUD(frac);
+    if (timeElapsedMs >= timeLimitMs) {
+      submitResult(shots > 0);
+    }
+  }
+
+  // Wheel rotation
+  var rt = config.rotationType;
+  if (rt === 'rotate') {
+    wheelAngle += config.rotationSpeed * dt;
+  } else if (rt === 'oscillate' || rt === 'sine') {
+    // Sine oscillation: wheel swings back and forth
+    sineTime += dt;
+    var period = config.oscillationPeriod > 0 ? config.oscillationPeriod : 2;
+    wheelAngle = config.oscillationMagnitude * Math.sin((2 * Math.PI / period) * sineTime);
+  } else if (rt === 'sineextended') {
+    // Extended sine: wider arc, also adds base rotation so wheel drifts while oscillating
+    sineTime += dt;
+    var periodExt = config.oscillationPeriod > 0 ? config.oscillationPeriod : 2;
+    wheelAngle += config.rotationSpeed * 0.3 * dt;
+    wheelAngle += config.oscillationMagnitude * 1.5 * Math.sin((2 * Math.PI / periodExt) * sineTime) * dt;
+  }
+
+  // Update apple positions (pinned to wheel — rotate offset with wheel angle)
+  var wRad = degToRad(wheelAngle);
+  var cosW = Math.cos(wRad);
+  var sinW = Math.sin(wRad);
+  for (var ai = 0; ai < apples.length; ai++) {
+    if (apples[ai].collected) continue;
+    // Rotate the original offset by current wheel angle
+    apples[ai].x = wheelX + apples[ai].offX * cosW - apples[ai].offY * sinW;
+    apples[ai].y = wheelY + apples[ai].offX * sinW + apples[ai].offY * cosW;
+  }
+
+  // Update flying knife
+  if (knife) {
+    if (knife.state === 'flying') {
+      knife.velY += knife.accel * dt;
+      knife.y    += knife.velY * dt;
+      checkCollisions();
+    } else if (knife.state === 'bouncing') {
+      knife.velY += knife.accel2 * dt;
+      knife.y    += knife.velY * dt;
+      knife.angle += knife.spinSpeed * dt;
+      // Game over trigger when bounce starts
+      if (gameOver && !submitted) {
+        setTimeout(function() { submitResult(false); }, 1200);
+        gameOver = 2; // prevent re-trigger
+      }
+    }
+  }
+
+  // Update explosion pieces
+  for (var pi = 0; pi < pieces.length; pi++) {
+    var p = pieces[pi];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 800 * dt; // gravity
+    p.angle += p.spin * dt;
+    p.alpha -= 0.6 * dt;
+    if (p.alpha < 0) p.alpha = 0;
+  }
+
+  render();
+  requestAnimationFrame(update);
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+
+function drawImageCentered(img, cx, cy, w, h, angleDeg) {
+  if (!img) return;
+  ctx.save();
+  ctx.translate(cx * scale, cy * scale);
+  ctx.rotate(degToRad(angleDeg || 0));
+  ctx.drawImage(img, -w * 0.5 * scale, -h * 0.5 * scale, w * scale, h * scale);
+  ctx.restore();
+}
+
+function drawImageCenteredAlpha(img, cx, cy, w, h, angleDeg, alpha) {
+  if (!img) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(cx * scale, cy * scale);
+  ctx.rotate(degToRad(angleDeg || 0));
+  ctx.drawImage(img, -w * 0.5 * scale, -h * 0.5 * scale, w * scale, h * scale);
+  ctx.restore();
+}
+
+// Draw a knife (from spritesheet crop)
+function drawKnifeAt(sheetIdx, cx, cy, angleDeg, alpha) {
+  var img = images['knife' + sheetIdx];
+  if (!img) img = images['knife0'];
+  if (!img) return;
+  ctx.save();
+  if (typeof alpha === 'number') ctx.globalAlpha = alpha;
+  ctx.translate(cx * scale, cy * scale);
+  ctx.rotate(degToRad(angleDeg || 0));
+  // The knife sprite crop depends on the level skin selection
+  // Each frame is 33x149 starting at (1 + frameIdx*35, 1)
+  ctx.drawImage(
+    img,
+    levelSkinSX, KNIFE_SY, KNIFE_SW, KNIFE_SH,
+    -KNIFE_DW * 0.5 * scale,
+    -KNIFE_DH * 0.5 * scale,
+    KNIFE_DW * scale,
+    KNIFE_DH * scale
+  );
+  ctx.restore();
+}
+
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // ── Background ──────────────────────────────────────────────────────
+  if (images['bg']) {
+    ctx.drawImage(images['bg'], 0, 0, 480 * scale, 800 * scale);
+  } else {
+    ctx.fillStyle = '#1a0a00';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // ── Wheel (rotated) ─────────────────────────────────────────────────
+  // sprite26 (center) is the collision target in C2, NOT a visible overlay.
+  // The wheel sprite already contains the full visual. Only draw wheel.
+  if (!wheelDestroyed) {
+    ctx.save();
+    ctx.translate(wheelX * scale, wheelY * scale);
+    ctx.rotate(degToRad(wheelAngle));
+    if (images['wheel']) {
+      ctx.drawImage(images['wheel'], -125 * scale, -125 * scale, 250 * scale, 250 * scale);
+    }
+    ctx.restore();
+  }
+
+  // ── Apples (on wheel, rotate with it) ──────────────────────────────
+  for (var ai = 0; ai < apples.length; ai++) {
+    if (apples[ai].collected) continue;
+    drawImageCentered(images['apple'], apples[ai].x, apples[ai].y, 52, 61, 0);
+  }
+
+  // ── Knives on wheel ─────────────────────────────────────────────────
+  if (!wheelDestroyed) {
+    for (var wi = 0; wi < knivesOnWheel.length; wi++) {
+      var wk = knivesOnWheel[wi];
+      var wrad = degToRad(wheelAngle + wk.stuckAngle);
+      var wx   = wheelX + Math.cos(wrad) * wk.stuckDist;
+      var wy   = wheelY + Math.sin(wrad) * wk.stuckDist;
+      // Blade points inward toward center. Outward direction = wheelAngle + stuckAngle.
+      // Knife draws blade at -Y (up). Inward = outward + 180. -Y = 270 deg.
+      // Rotation = (outward + 180) - 270 = outward - 90
+      var kangle = wheelAngle + wk.stuckAngle - 90;
+      drawKnifeAt(wk.sheetIdx, wx, wy, kangle, 1);
+    }
+  }
+
+  // ── Flying knife ─────────────────────────────────────────────────────
+  if (knife) {
+    if (knife.state === 'idle' || knife.state === 'flying') {
+      drawKnifeAt(knife.sheetIdx, knife.x, knife.y, 0, 1);
+    } else if (knife.state === 'bouncing') {
+      drawKnifeAt(knife.sheetIdx, knife.x, knife.y, knife.angle, 1);
+    }
+  }
+
+  // ── Explosion pieces ─────────────────────────────────────────────────
+  for (var pi = 0; pi < pieces.length; pi++) {
+    var p = pieces[pi];
+    if (p.alpha <= 0) continue;
+    if (p.isKnife) {
+      drawKnifeAt(p.sheetIdx, p.x, p.y, p.angle, p.alpha);
+    } else if (images[p.key]) {
+      var pimg = images[p.key];
+      ctx.save();
+      ctx.globalAlpha = p.alpha;
+      ctx.translate(p.x * scale, p.y * scale);
+      ctx.rotate(degToRad(p.angle));
+      ctx.drawImage(pimg, -pimg.width * 0.5 * scale, -pimg.height * 0.5 * scale, pimg.width * scale, pimg.height * scale);
+      ctx.restore();
+    }
+  }
+
+  // ── Ammo indicators (left side) ──────────────────────────────────────
+  var totalShots  = config.throwCount;
+  var thrownShots = totalShots - shotsLeft;
+  var ammoX = 46;
+  var ammoStartY = 732;
+  var ammoSpacing = 30;
+
+  for (var ai = 0; ai < totalShots; ai++) {
+    var ammoY   = ammoStartY - ai * ammoSpacing;
+    var imgKey  = (ai < thrownShots) ? 'ammoOff' : 'ammoOn';
+    if (images[imgKey]) {
+      ctx.globalAlpha = (ai < thrownShots) ? 0.35 : 1;
+      ctx.drawImage(
+        images[imgKey],
+        (ammoX - 13.5) * scale,
+        (ammoY - 14.5) * scale,
+        27 * scale,
+        29 * scale
+      );
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // ── Loading overlay ───────────────────────────────────────────────────
+  if (gameState === STATE_LOADING) {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#F59E0B';
+    ctx.font = 'bold ' + Math.round(20 * scale) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Loading...', canvas.width / 2, canvas.height / 2);
+  }
+}
+
+// ─── Asset Load Complete ──────────────────────────────────────────────────────
+
+function checkAllLoaded() {
+  if (loadCount < loadTotal) return;
+  initGame();
+  requestAnimationFrame(update);
+}
+
+// Kick off initial render while loading
+requestAnimationFrame(function draw() {
+  if (gameState === STATE_LOADING) {
+    render();
+    requestAnimationFrame(draw);
+  }
+});
+
+})();
+</script>
+</body>
+</html>

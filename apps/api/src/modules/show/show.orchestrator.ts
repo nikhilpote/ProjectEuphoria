@@ -216,6 +216,31 @@ export class ShowOrchestrator {
           }
         }
 
+        // For knife_at_center: resolve the level config from DB
+        if (marker.gameType === 'knife_at_center') {
+          const kac = (marker.config['knifeAtCenter'] ?? marker.config) as Record<string, unknown>;
+          const levelName = kac['level'] as string | undefined;
+          if (levelName) {
+            const level = await this.gamePackagesService.getLevelCached('knife_at_center', levelName);
+            if (level) {
+              // Merge the full level config into the payload so the game HTML receives it directly
+              questionConfig = {
+                ...marker.config,
+                knifeAtCenter: {
+                  ...kac,
+                  ...level.config,
+                },
+              };
+            } else {
+              this.logger.warn(`knife_at_center level "${levelName}" not found — round ${i} will use defaults`);
+            }
+          }
+        }
+
+        if (marker.gameType === 'knife_at_center') {
+          this.logger.debug(`[KAC] questionConfig = ${JSON.stringify(questionConfig)}`);
+        }
+
         const questionEvent = this.gameRegistry.buildQuestionEvent(
           marker.gameType,
           questionConfig,
