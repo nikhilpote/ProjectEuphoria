@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/.turbo
+# Exclude mobile & admin source, but keep package.json for workspace resolution
+apps/mobile
+!apps/mobile/package.json
+apps/admin
+!apps/admin/package.json
+.git
+.expo
+*.mp4
+*.log
+game-packages
+docs
+FridayNightShow*

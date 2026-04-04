@@ -17,6 +17,8 @@ out/
 .env
 .env.*
 !.env.example
+!.env.staging.template
+.deploy-hashes
 
 # Uploads / temp files
 apps/api/uploads/
