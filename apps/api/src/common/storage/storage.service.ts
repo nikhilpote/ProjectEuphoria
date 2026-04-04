@@ -41,15 +41,17 @@ export class StorageService {
 
     if (this.provider === 's3') {
       const endpoint = config.get<string>('S3_ENDPOINT');
+      var accessKeyId = config.get<string>('S3_ACCESS_KEY_ID');
+      var secretAccessKey = config.get<string>('S3_SECRET_ACCESS_KEY');
       this.s3 = new S3Client({
         region: config.get<string>('S3_REGION') ?? 'auto',
         ...(endpoint ? { endpoint, forcePathStyle: false } : {}),
-        credentials: {
-          accessKeyId: config.get<string>('S3_ACCESS_KEY_ID') ?? '',
-          secretAccessKey: config.get<string>('S3_SECRET_ACCESS_KEY') ?? '',
-        },
+        // Use explicit credentials if provided, otherwise fall back to IAM role
+        ...(accessKeyId && secretAccessKey
+          ? { credentials: { accessKeyId, secretAccessKey } }
+          : {}),
       });
-      this.logger.log(`Storage: S3 (bucket=${this.bucket}, endpoint=${endpoint ?? 'AWS'})`);
+      this.logger.log(`Storage: S3 (bucket=${this.bucket}, endpoint=${endpoint ?? 'AWS'}, auth=${accessKeyId ? 'keys' : 'iam-role'})`);
     } else {
       this.logger.log('Storage: local disk (uploads/)');
     }

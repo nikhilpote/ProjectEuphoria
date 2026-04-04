@@ -100,10 +100,8 @@ export class AdminController {
     @UploadedFile() file: Express.Multer.File,
   ): Promise<{ url: string }> {
     if (!file) throw new BadRequestException('No file uploaded');
-    // Re-encode videos to mobile-optimised profile (~1.2 Mbps, faststart).
-    // Images pass through unchanged. Transcoded path replaces the original on disk.
-    const uploadPath = await this.transcodeService.transcodeForMobile(file.path, file.filename);
-    const url = await this.storageService.upload(uploadPath, file.filename);
+    // Upload directly — videos should be pre-transcoded locally before upload
+    const url = await this.storageService.upload(file.path, file.filename);
     return { url };
   }
 

@@ -36,8 +36,11 @@ async function bootstrap(): Promise<void> {
     }
   }
 
-  // Security
-  app.use(helmet());
+  // Security — relax CORP/COEP for cross-origin admin access in non-production
+  app.use(helmet({
+    crossOriginResourcePolicy: nodeEnv === 'production' ? { policy: 'same-origin' } : false,
+    crossOriginOpenerPolicy: nodeEnv === 'production' ? { policy: 'same-origin' } : false,
+  }));
   app.use(compression());
 
   // CORS — tighten origins in production

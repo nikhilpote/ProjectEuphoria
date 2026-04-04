@@ -12,7 +12,6 @@ import {
   type Show,
   type CreateShowInput,
   type MediaFile,
-  type ClipRangeInput,
 } from '../api/shows';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -146,6 +145,8 @@ function defaultConfig(gameType: string): Record<string, unknown> {
     };
   if (gameType === 'spot_difference')
     return { spotDifference: { levelId: '', findCount: 1 } };
+  if (gameType === 'knife_at_center')
+    return { knifeAtCenter: { level: 'Level1' } };
   return {};
 }
 
@@ -210,6 +211,15 @@ const GAME_TEMPLATE = [
       },
     },
     timeLimitMs: 30000,
+  },
+  {
+    gameType: 'knife_at_center',
+    config: {
+      knifeAtCenter: {
+        level: 'Level1',
+      },
+    },
+    timeLimitMs: 15000,
   },
 ];
 
@@ -532,6 +542,59 @@ function SpotDifferenceConfigForm({
   );
 }
 
+// ─── Knife at Center config form ─────────────────────────────────────────────
+
+const KNIFE_HIT_LEVELS = [
+  'Level1','Level2','Level3','Level4','Level5','Level6','Level7',
+  'Level8','Level9','Level10','Level11','Level12','Level13','Level14',
+  'Level15','Level16','Level17','Level18','Level19','Level20','Level21',
+  'Boss1','Boss2','Boss3','Boss4','Boss5','Boss6','Boss7',
+];
+
+interface KnifeAtCenterConfigData { level: string; }
+
+function KnifeAtCenterConfigForm({
+  config,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  onChange: (c: Record<string, unknown>) => void;
+}) {
+  const kac = (config['knifeAtCenter'] as KnifeAtCenterConfigData | undefined) ?? { level: 'Level1' };
+
+  const update = (patch: Partial<KnifeAtCenterConfigData>) =>
+    onChange({ knifeAtCenter: { ...kac, ...patch } });
+
+  const isBoss = kac.level.startsWith('Boss');
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+        Level
+      </label>
+      <select
+        value={kac.level}
+        onChange={(e) => update({ level: e.target.value })}
+        className="w-full px-3 py-2 rounded-lg bg-[#0A0A14] border border-[#2A2A4A] text-sm text-gray-100 focus:outline-none focus:border-[#7C3AED] transition-colors"
+      >
+        <optgroup label="Regular Levels">
+          {KNIFE_HIT_LEVELS.filter((l) => l.startsWith('Level')).map((l) => (
+            <option key={l} value={l}>{l.replace('Level', 'Level ')}</option>
+          ))}
+        </optgroup>
+        <optgroup label="Boss Levels">
+          {KNIFE_HIT_LEVELS.filter((l) => l.startsWith('Boss')).map((l) => (
+            <option key={l} value={l}>{l.replace('Boss', 'Boss ')}</option>
+          ))}
+        </optgroup>
+      </select>
+      {isBoss && (
+        <p className="text-[10px] text-amber-400">Boss level — harder rotation + more pre-placed knives</p>
+      )}
+    </div>
+  );
+}
+
 // ─── Marker card ──────────────────────────────────────────────────────────────
 
 function MarkerCard({
@@ -583,6 +646,11 @@ function MarkerCard({
     if (marker.gameType === 'spot_difference') {
       return (
         <SpotDifferenceConfigForm config={marker.config} onChange={(c) => onUpdate({ config: c })} />
+      );
+    }
+    if (marker.gameType === 'knife_at_center') {
+      return (
+        <KnifeAtCenterConfigForm config={marker.config} onChange={(c) => onUpdate({ config: c })} />
       );
     }
     return (
