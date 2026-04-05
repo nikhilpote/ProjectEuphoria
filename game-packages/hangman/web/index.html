@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Hangman</title>
+  <style>
+    @font-face {
+      font-family: 'Naomi';
+      src: url('../fonts/naomi.ttf') format('truetype');
+      font-display: swap;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    :root {
+      --bg: #0D0D1A;
+      --card: #1A1A2E;
+      --border: #2A2A4A;
+      --accent: #10B981;
+      --accent-glow: rgba(16, 185, 129, 0.25);
+      --text: #FFFFFF;
+      --muted: #9CA3AF;
+      --danger: #EF4444;
+      --key-bg: #1E1E35;
+      --key-border: #3A3A5A;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Naomi', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    #root {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Background image layer */
+    #bg-layer {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      z-index: 0;
+    }
+
+    /* All content above bg */
+    #game-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      padding: 6px 10px 6px;
+      gap: 0;
+    }
+
+    /* Spacer for host PIP overlay (~18% of screen) */
+    #pip-spacer {
+      flex-shrink: 0;
+      height: 14vh;
+    }
+
+    /* ── Timer HUD ────────────────────────────────────── */
+    #timer-hud {
+      flex-shrink: 0;
+    }
+
+    #timer-bar-track {
+      width: 100%;
+      height: 5px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    #timer-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), #34D399);
+      border-radius: 3px;
+      transform-origin: left;
+      transition: transform 0.1s linear, background 0.3s;
+      will-change: transform;
+    }
+
+    #timer-bar.urgent {
+      background: linear-gradient(90deg, var(--danger), #F97316);
+    }
+
+    #timer-text {
+      text-align: right;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      margin-top: 3px;
+      letter-spacing: 0.5px;
+    }
+
+    #timer-text.urgent {
+      color: var(--danger);
+    }
+
+    /* ── Clue area ────────────────────────────────────── */
+    #clue-area {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      height: 48px;
+      margin-bottom: 6px;
+    }
+
+    #clue-frame-img {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      height: 53px;
+      width: auto;
+      max-width: 100%;
+      object-fit: contain;
+    }
+
+    #clue-text {
+      position: relative;
+      z-index: 2;
+      font-size: 15px;
+      font-weight: 800;
+      color: #1a1a2e;
+      text-align: center;
+      text-shadow: 0 1px 0 rgba(255,255,255,0.3);
+      padding: 0 16px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* ── Gallow area ──────────────────────────────────── */
+    #gallow-area {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      min-height: 0;
+    }
+
+    #gallow-container {
+      position: relative;
+      width: 240px;
+      height: 242px;
+      /* Gallow is 303x305. Container 240px wide. Scale = 240/303 = 0.792 */
+    }
+
+    #img-gallow {
+      position: absolute;
+      width: 240px;
+      height: 242px;
+      top: 0;
+      left: 0;
+    }
+
+    /* Body parts are 3-frame horizontal sprite strips.
+       <div> with overflow:hidden shows only left 1/3 (frame 0).
+       Positions from game.js chain, scaled by 240/303 = 0.792 */
+
+    .body-part {
+      position: absolute;
+      display: none;
+      overflow: hidden;
+    }
+
+    .body-part.visible {
+      display: block;
+    }
+
+    /* Sprite strip is 3 frames wide. Show frame 2 (rightmost = fully drawn).
+       Container clips to 1/3 width. Shift sprite left by -200% to show frame 2. */
+    .body-part .sprite {
+      width: 300%;
+      height: 100%;
+      margin-left: -200%;
+      background-size: 100% 100%;
+      background-repeat: no-repeat;
+    }
+
+    /* Scale 0.792 from 303px original
+       rope:  x=196 y=10   fw=8  fh=47  → 155,8  6x37
+       head:  x=173 y=52   fw=47 fh=48  → 137,41 37x38
+       body:  x=196 y=95   fw=9  fh=88  → 155,75 7x70
+       hands: y=95  fw=40  fh=39
+       legs:  y=178 fw=38  fh=60
+    */
+    #part-rope       { left: 155px; top: 8px;   width: 6px;  height: 37px; }
+    #part-head       { left: 140px; top: 41px;  width: 37px; height: 38px; }
+    #part-body       { left: 155px; top: 75px;  width: 7px;  height: 70px; }
+    #part-hand-left  { left: 158px; top: 75px;  width: 32px; height: 31px; }
+    #part-hand-right { left: 127px; top: 75px;  width: 32px; height: 31px; }
+    #part-leg-left   { left: 158px; top: 141px; width: 30px; height: 48px; }
+    #part-leg-right  { left: 128px; top: 141px; width: 30px; height: 48px; }
+
+    /* Wrong count badge */
+    #wrong-badge {
+      position: absolute;
+      top: 4px;
+      right: 0;
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid var(--danger);
+      border-radius: 8px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--danger);
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Word display ─────────────────────────────────── */
+    #word-area {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 8px 10px;
+    }
+
+    #word-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 4px;
+      max-width: 100%;
+    }
+
+    .letter-slot {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      min-width: 22px;
+    }
+
+    .letter-char {
+      font-size: 18px;
+      font-weight: 900;
+      color: #1a1a2e;
+      height: 22px;
+      line-height: 22px;
+      text-align: center;
+      min-width: 22px;
+      text-shadow: 0 1px 0 rgba(0,0,0,0.3);
+    }
+
+    .letter-char.hidden {
+      color: transparent;
+      text-shadow: none;
+    }
+
+    .letter-dash {
+      width: 22px;
+      height: 3px;
+      background: rgba(0,0,0,0.5);
+      border-radius: 2px;
+    }
+
+    .letter-dash.revealed {
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent-glow);
+    }
+
+    /* ── Keyboard ─────────────────────────────────────── */
+    #keyboard {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      padding: 4px 2px 10px;
+    }
+
+    .key-row {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .key-btn {
+      min-width: 30px;
+      height: 38px;
+      background: var(--key-bg);
+      border: 1px solid var(--key-border);
+      border-radius: 6px;
+      color: #FFFFFF;
+      font-family: 'Naomi', -apple-system, sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      max-width: 38px;
+      transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+      -webkit-user-select: none;
+      user-select: none;
+      position: relative;
+      overflow: hidden;
+      padding: 0;
+    }
+
+    .key-btn:active {
+      opacity: 0.7;
+    }
+
+    .key-btn.correct {
+      background: rgba(16, 185, 129, 0.25);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .key-btn.wrong {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: #6B2E2E;
+      color: #6B2E2E;
+      opacity: 0.5;
+    }
+
+    .key-btn.used {
+      pointer-events: none;
+    }
+
+    /* ── Result overlay ───────────────────────────────── */
+    #result-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.75);
+    }
+
+    #result-overlay.visible {
+      display: flex;
+    }
+
+    #result-banner-img {
+      max-width: 90%;
+      max-height: 35%;
+      object-fit: contain;
+      animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    #result-score {
+      margin-top: 16px;
+      font-size: 22px;
+      font-weight: 900;
+      color: #FFFFFF;
+      text-align: center;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.8);
+    }
+
+    #result-answer {
+      margin-top: 8px;
+      font-size: 14px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    @keyframes popIn {
+      0%   { transform: scale(0.5); opacity: 0; }
+      100% { transform: scale(1);   opacity: 1; }
+    }
+
+    /* Loading state */
+    #loading-screen {
+      position: absolute;
+      inset: 0;
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+    }
+
+    #loading-screen.hidden {
+      display: none;
+    }
+
+    .loader-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      margin: 0 4px;
+      animation: bounce 0.8s infinite alternate;
+      display: inline-block;
+    }
+
+    .loader-dot:nth-child(2) { animation-delay: 0.2s; }
+    .loader-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes bounce {
+      0%   { transform: translateY(0); opacity: 0.5; }
+      100% { transform: translateY(-12px); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="root">
+  <!-- Background layer -->
+  <div id="bg-layer"></div>
+
+  <!-- Loading screen -->
+  <div id="loading-screen">
+    <span class="loader-dot"></span>
+    <span class="loader-dot"></span>
+    <span class="loader-dot"></span>
+  </div>
+
+  <!-- Game content -->
+  <div id="game-content">
+
+    <!-- Spacer for host PIP overlay -->
+    <div id="pip-spacer"></div>
+
+    <!-- Timer HUD -->
+    <div id="timer-hud">
+      <div id="timer-bar-track">
+        <div id="timer-bar"></div>
+      </div>
+      <div id="timer-text">30s</div>
+    </div>
+
+    <!-- Clue area -->
+    <div id="clue-area">
+      <img id="clue-frame-img" src="" alt="" aria-hidden="true" />
+      <span id="clue-text">Category</span>
+    </div>
+
+    <!-- Gallow area -->
+    <div id="gallow-area">
+      <div id="gallow-container">
+        <img id="img-gallow" src="" alt="gallows" />
+        <div id="part-rope"       class="body-part"><div class="sprite" id="spr-rope"></div></div>
+        <div id="part-head"       class="body-part"><div class="sprite" id="spr-head"></div></div>
+        <div id="part-body"       class="body-part"><div class="sprite" id="spr-body"></div></div>
+        <div id="part-hand-left"  class="body-part"><div class="sprite" id="spr-hand-left"></div></div>
+        <div id="part-hand-right" class="body-part"><div class="sprite" id="spr-hand-right"></div></div>
+        <div id="part-leg-left"   class="body-part"><div class="sprite" id="spr-leg-left"></div></div>
+        <div id="part-leg-right"  class="body-part"><div class="sprite" id="spr-leg-right"></div></div>
+      </div>
+      <div id="wrong-badge">0 / 7</div>
+    </div>
+
+    <!-- Word display -->
+    <div id="word-area">
+      <div id="word-row"></div>
+    </div>
+
+    <!-- Keyboard -->
+    <div id="keyboard">
+      <div class="key-row" id="row-1"></div>
+      <div class="key-row" id="row-2"></div>
+      <div class="key-row" id="row-3"></div>
+    </div>
+
+  </div><!-- /game-content -->
+
+  <!-- Result overlay -->
+  <div id="result-overlay">
+    <img id="result-banner-img" src="" alt="result" />
+    <div id="result-score"></div>
+    <div id="result-answer"></div>
+  </div>
+
+</div><!-- /root -->
+
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────
+var KEYBOARD_ROWS = [
+  ['Q','W','E','R','T','Y','U','I','O','P'],
+  ['A','S','D','F','G','H','J','K','L'],
+  ['Z','X','C','V','B','N','M']
+];
+
+var BODY_PART_IDS = [
+  'part-rope',
+  'part-head',
+  'part-body',
+  'part-hand-left',
+  'part-hand-right',
+  'part-leg-left',
+  'part-leg-right'
+];
+
+var MAX_WRONG = 7;
+
+// ── Image asset paths ──────────────────────────────────────────────────────
+var IMAGE_PATHS = {
+  background:   '../images/general_background_vertical.png',
+  gallow:       '../images/animation_gallow.png',
+  rope:         '../images/animation_rope.png',
+  head:         '../images/animation_head.png',
+  body:         '../images/animation_body.png',
+  handLeft:     '../images/animation_hand_left.png',
+  handRight:    '../images/animation_hand_right.png',
+  legLeft:      '../images/animation_leg_left.png',
+  legRight:     '../images/animation_leg_right.png',
+  clueFrame:    '../images/gameplay_clueframe.png',
+  win:          '../images/win.png',
+  lose:         '../images/lose.png'
+};
+
+// ── Game state ─────────────────────────────────────────────────────────────
+var answer = '';
+var clue = '';
+var timeLimitMs = 30000;
+var startTs = null;
+var timerRaf = null;
+var wrongCount = 0;
+var guessedLetters = {};
+var gameOver = false;
+var imageCache = {};
+var imagesLoaded = 0;
+var imagesTotal = 0;
+var gameInitPayload = null;
+
+// ── DOM refs ───────────────────────────────────────────────────────────────
+var $bgLayer        = document.getElementById('bg-layer');
+var $loadingScreen  = document.getElementById('loading-screen');
+var $timerBar       = document.getElementById('timer-bar');
+var $timerText      = document.getElementById('timer-text');
+var $clueFrameImg   = document.getElementById('clue-frame-img');
+var $clueText       = document.getElementById('clue-text');
+var $gallowImg      = document.getElementById('img-gallow');
+var $wordRow        = document.getElementById('word-row');
+var $wrongBadge     = document.getElementById('wrong-badge');
+var $resultOverlay  = document.getElementById('result-overlay');
+var $resultBanner   = document.getElementById('result-banner-img');
+var $resultScore    = document.getElementById('result-score');
+var $resultAnswer   = document.getElementById('result-answer');
+
+// ── Native bridge ──────────────────────────────────────────────────────────
+function postToNative(msg) {
+  var str = JSON.stringify(msg);
+  if (window.ReactNativeWebView) {
+    window.ReactNativeWebView.postMessage(str);
+  } else {
+    window.parent.postMessage(str, '*');
+  }
+}
+
+// ── Image loading ──────────────────────────────────────────────────────────
+function loadBase64Image(key, path, onAllLoaded) {
+  imagesTotal++;
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', path, true);
+  xhr.onload = function() {
+    var text = xhr.responseText || '';
+    // Strip leading "base64," prefix if present
+    if (text.indexOf('base64,') === 0) {
+      text = text.substring(7);
+    }
+    // Also handle "data:image/png;base64," if already a full data URI somehow
+    if (text.indexOf('data:') === 0) {
+      imageCache[key] = text;
+      onImageLoaded(onAllLoaded);
+      return;
+    }
+    var dataUri = 'data:image/png;base64,' + text.replace(/\s/g, '');
+    imageCache[key] = dataUri;
+    onImageLoaded(onAllLoaded);
+  };
+  xhr.onerror = function() {
+    // Still count as loaded to not block game
+    imageCache[key] = '';
+    onImageLoaded(onAllLoaded);
+  };
+  xhr.send();
+}
+
+function onImageLoaded(onAllLoaded) {
+  imagesLoaded++;
+  if (imagesLoaded >= imagesTotal) {
+    onAllLoaded();
+  }
+}
+
+function loadAllImages(onAllLoaded) {
+  imagesLoaded = 0;
+  imagesTotal = 0;
+
+  var keys = Object.keys(IMAGE_PATHS);
+  for (var i = 0; i < keys.length; i++) {
+    loadBase64Image(keys[i], IMAGE_PATHS[keys[i]], onAllLoaded);
+  }
+}
+
+function applyImages() {
+  if (imageCache['background']) {
+    $bgLayer.style.backgroundImage = 'url(' + imageCache['background'] + ')';
+  }
+  if (imageCache['gallow']) {
+    $gallowImg.src = imageCache['gallow'];
+  }
+  if (imageCache['clueFrame']) {
+    $clueFrameImg.src = imageCache['clueFrame'];
+  }
+
+  // Set sprite strip as background on body part divs (show frame 0 = left 1/3)
+  var spriteMap = {
+    'spr-rope':       'rope',
+    'spr-head':       'head',
+    'spr-body':       'body',
+    'spr-hand-left':  'handLeft',
+    'spr-hand-right': 'handRight',
+    'spr-leg-left':   'legLeft',
+    'spr-leg-right':  'legRight'
+  };
+
+  for (var sprId in spriteMap) {
+    var sprEl = document.getElementById(sprId);
+    var cacheKey = spriteMap[sprId];
+    if (sprEl && imageCache[cacheKey]) {
+      sprEl.style.backgroundImage = 'url(' + imageCache[cacheKey] + ')';
+    }
+  }
+}
+
+// ── Keyboard ───────────────────────────────────────────────────────────────
+function buildKeyboard() {
+  var rowIds = ['row-1', 'row-2', 'row-3'];
+  for (var r = 0; r < KEYBOARD_ROWS.length; r++) {
+    var rowEl = document.getElementById(rowIds[r]);
+    rowEl.innerHTML = '';
+    var letters = KEYBOARD_ROWS[r];
+    for (var c = 0; c < letters.length; c++) {
+      var letter = letters[c];
+      var btn = document.createElement('button');
+      btn.className = 'key-btn';
+      btn.id = 'key-' + letter;
+      btn.textContent = letter;
+      btn.setAttribute('data-letter', letter);
+
+      // Touch-first: touchend fires and sets flag, click checks flag to prevent double
+      (function(l, b) {
+        var touchFired = false;
+        b.addEventListener('touchend', function(e) {
+          e.preventDefault();
+          touchFired = true;
+          onLetterPress(l);
+          setTimeout(function() { touchFired = false; }, 300);
+        }, { passive: false });
+        b.addEventListener('click', function(e) {
+          e.preventDefault();
+          if (!touchFired) onLetterPress(l);
+        });
+      })(letter, btn);
+
+      rowEl.appendChild(btn);
+    }
+  }
+}
+
+// ── Word display ───────────────────────────────────────────────────────────
+function buildWordDisplay() {
+  $wordRow.innerHTML = '';
+  for (var i = 0; i < answer.length; i++) {
+    var ch = answer[i];
+    var slot = document.createElement('div');
+    slot.className = 'letter-slot';
+
+    var charEl = document.createElement('div');
+    charEl.className = 'letter-char hidden';
+    charEl.id = 'char-' + i;
+    charEl.textContent = ch === ' ' ? '\u00A0' : ch;
+
+    var dashEl = document.createElement('div');
+    dashEl.className = 'letter-dash';
+    dashEl.id = 'dash-' + i;
+
+    if (ch === ' ') {
+      // Space — show wider gap, no dash
+      slot.style.minWidth = '12px';
+      dashEl.style.visibility = 'hidden';
+    }
+
+    slot.appendChild(charEl);
+    slot.appendChild(dashEl);
+    $wordRow.appendChild(slot);
+  }
+}
+
+function revealLetter(letter) {
+  for (var i = 0; i < answer.length; i++) {
+    if (answer[i] === letter) {
+      var charEl = document.getElementById('char-' + i);
+      var dashEl = document.getElementById('dash-' + i);
+      if (charEl) {
+        charEl.classList.remove('hidden');
+      }
+      if (dashEl) {
+        dashEl.classList.add('revealed');
+      }
+    }
+  }
+}
+
+// ── Game logic ─────────────────────────────────────────────────────────────
+function onLetterPress(letter) {
+  if (gameOver) return;
+  if (guessedLetters[letter]) return;
+
+  guessedLetters[letter] = true;
+
+  var keyBtn = document.getElementById('key-' + letter);
+  if (!keyBtn) return;
+  keyBtn.classList.add('used');
+
+  var isCorrect = answer.indexOf(letter) >= 0;
+
+  if (isCorrect) {
+    keyBtn.classList.add('correct');
+    revealLetter(letter);
+    checkWin();
+  } else {
+    keyBtn.classList.add('wrong');
+    wrongCount++;
+    updateBodyPart();
+    updateWrongBadge();
+    checkLose();
+  }
+}
+
+function updateBodyPart() {
+  var idx = wrongCount - 1;
+  if (idx >= 0 && idx < BODY_PART_IDS.length) {
+    var el = document.getElementById(BODY_PART_IDS[idx]);
+    if (el) {
+      el.classList.add('visible');
+    }
+  }
+}
+
+function updateWrongBadge() {
+  $wrongBadge.textContent = wrongCount + ' / ' + MAX_WRONG;
+}
+
+function isWordComplete() {
+  for (var i = 0; i < answer.length; i++) {
+    if (answer[i] !== ' ' && !guessedLetters[answer[i]]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function checkWin() {
+  if (isWordComplete()) {
+    endGame(true);
+  }
+}
+
+function checkLose() {
+  if (wrongCount >= MAX_WRONG) {
+    endGame(false);
+  }
+}
+
+// ── Timer ──────────────────────────────────────────────────────────────────
+function startTimer() {
+  startTs = Date.now();
+  function tick() {
+    if (gameOver) return;
+    var elapsed = Date.now() - startTs;
+    var remaining = timeLimitMs - elapsed;
+    if (remaining < 0) { remaining = 0; }
+    var pct = remaining / timeLimitMs;
+    var secs = Math.ceil(remaining / 1000);
+
+    $timerBar.style.transform = 'scaleX(' + pct + ')';
+    $timerText.textContent = secs + 's';
+
+    var urgent = secs <= 5;
+    if (urgent) {
+      $timerBar.classList.add('urgent');
+      $timerText.classList.add('urgent');
+    } else {
+      $timerBar.classList.remove('urgent');
+      $timerText.classList.remove('urgent');
+    }
+
+    if (remaining <= 0) {
+      endGame(false);
+      return;
+    }
+
+    timerRaf = requestAnimationFrame(tick);
+  }
+  timerRaf = requestAnimationFrame(tick);
+}
+
+function stopTimer() {
+  if (timerRaf) {
+    cancelAnimationFrame(timerRaf);
+    timerRaf = null;
+  }
+}
+
+// ── End game ───────────────────────────────────────────────────────────────
+function endGame(won) {
+  if (gameOver) return;
+  gameOver = true;
+  stopTimer();
+
+  var timeTakenMs = startTs ? (Date.now() - startTs) : 0;
+
+  // Reveal full answer on loss
+  if (!won) {
+    for (var i = 0; i < answer.length; i++) {
+      var charEl = document.getElementById('char-' + i);
+      var dashEl = document.getElementById('dash-' + i);
+      if (charEl) { charEl.classList.remove('hidden'); }
+      if (dashEl) { dashEl.classList.add('revealed'); }
+    }
+  }
+
+  // Show result overlay
+  var bannerKey = won ? 'win' : 'lose';
+  if (imageCache[bannerKey]) {
+    $resultBanner.src = imageCache[bannerKey];
+  }
+  $resultScore.textContent = won ? 'You got it!' : 'Better luck next time!';
+  $resultAnswer.textContent = 'Answer: ' + answer;
+
+  $resultOverlay.classList.add('visible');
+
+  // Post to native — pass/fail only, no score
+  postToNative({
+    type: 'SUBMIT_ANSWER',
+    payload: {
+      won: won,
+      wrongCount: wrongCount,
+      timeTakenMs: timeTakenMs
+    }
+  });
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+function init(rawPayload) {
+  if (!rawPayload) return;
+
+  // Normalize nested payload
+  var payload = rawPayload;
+  if (rawPayload.payload) {
+    payload = {
+      clue: rawPayload.payload.clue || '',
+      answer: rawPayload.payload.answer || '',
+      timeLimitMs: rawPayload.timeLimitMs || rawPayload.payload.timeLimitMs || 30000
+    };
+  }
+
+  clue = (payload.clue || 'Category').toString().toUpperCase();
+  answer = (payload.answer || 'HANGMAN').toString().toUpperCase();
+  timeLimitMs = payload.timeLimitMs || 30000;
+
+  // Reset state
+  wrongCount = 0;
+  gameOver = false;
+  guessedLetters = {};
+  startTs = null;
+
+  // Set clue text
+  $clueText.textContent = clue;
+  updateWrongBadge();
+
+  // Build displays
+  buildKeyboard();
+  buildWordDisplay();
+
+  // Load images then start
+  loadAllImages(function() {
+    applyImages();
+    $loadingScreen.classList.add('hidden');
+    startTimer();
+  });
+
+  postToNative({ type: 'GAME_READY' });
+}
+
+// ── Message listener ───────────────────────────────────────────────────────
+window.addEventListener('message', function(event) {
+  var msg;
+  try {
+    msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+  } catch(e) { return; }
+  if (!msg) return;
+  if (msg.type === 'GAME_INIT' && msg.payload) {
+    init(msg.payload);
+  }
+});
+
+// ── Bootstrap: URL hash → __EUPHORIA_GAME__ → wait ────────────────────────
+(function() {
+  function tryInit(g) {
+    if (!g) return false;
+    init(g);
+    return true;
+  }
+
+  // Channel 1: URL hash
+  if (location.hash && location.hash.length > 1) {
+    try {
+      var decoded = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+      if (tryInit(decoded)) return;
+    } catch(e) {}
+  }
+
+  // Channel 2: __EUPHORIA_GAME__ global
+  if (window.__EUPHORIA_GAME__) {
+    if (tryInit(window.__EUPHORIA_GAME__)) return;
+  }
+
+  // Channel 3: wait for message event (already registered above)
+  // Additionally poll briefly for the global in case it's set after DOM ready
+  var pollCount = 0;
+  var pollInterval = setInterval(function() {
+    pollCount++;
+    if (window.__EUPHORIA_GAME__) {
+      clearInterval(pollInterval);
+      tryInit(window.__EUPHORIA_GAME__);
+      return;
+    }
+    if (pollCount >= 20) {
+      clearInterval(pollInterval);
+      // Dev fallback: start with demo data
+      tryInit({ clue: 'Animals', answer: 'CROCODILE', timeLimitMs: 30000 });
+    }
+  }, 100);
+})();
+</script>
+</body>
+</html>

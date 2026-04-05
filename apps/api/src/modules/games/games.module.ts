@@ -5,6 +5,7 @@ import { TriviaHandler } from './handlers/trivia.handler';
 import { QuickMathHandler } from './handlers/quick-math.handler';
 import { SpotDifferenceHandler } from './handlers/spot-difference.handler';
 import { KnifeAtCenterHandler } from './handlers/knife-at-center.handler';
+import { HangmanHandler } from './handlers/hangman.handler';
 
 /**
  * GamesModule aggregates all mini-game sub-modules and the game handler registry.
@@ -27,5 +28,6 @@ export class GamesModule implements OnModuleInit {
     this.registry.register(new QuickMathHandler());
     this.registry.register(new SpotDifferenceHandler());
     this.registry.register(new KnifeAtCenterHandler());
+    this.registry.register(new HangmanHandler());
   }
 }

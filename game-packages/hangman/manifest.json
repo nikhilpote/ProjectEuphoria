@@ -1,0 +1,13 @@
+{
+  "id": "hangman",
+  "name": "Hangman",
+  "version": "1.0.0",
+  "description": "Guess the word letter by letter before the hangman is complete",
+  "layout": "fullscreen",
+  "configSchema": {
+    "category": {
+      "type": "string",
+      "label": "Category"
+    }
+  }
+}

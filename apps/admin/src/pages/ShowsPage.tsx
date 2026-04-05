@@ -27,6 +27,7 @@ const GAME_TYPES = [
   'spot_difference',
   'fruit_cutting',
   'knife_at_center',
+  'hangman',
   'spelling_bee',
   'find_items',
   'memory_grid',
@@ -38,6 +39,7 @@ const GAME_TYPE_LABELS: Record<string, string> = {
   spot_difference: 'Spot the Difference',
   fruit_cutting: 'Fruit Cutting',
   knife_at_center: 'Knife at Center',
+  hangman: 'Hangman',
   spelling_bee: 'Spelling Bee',
   find_items: 'Find Items',
   memory_grid: 'Memory Grid',
@@ -49,6 +51,7 @@ const GAME_TYPE_SHORT: Record<string, string> = {
   spot_difference: 'SPD',
   fruit_cutting: 'FC',
   knife_at_center: 'KC',
+  hangman: 'HM',
   spelling_bee: 'SB',
   find_items: 'FI',
   memory_grid: 'MG',
@@ -147,6 +150,8 @@ function defaultConfig(gameType: string): Record<string, unknown> {
     return { spotDifference: { levelId: '', findCount: 1 } };
   if (gameType === 'knife_at_center')
     return { knifeAtCenter: { level: 'Level1' } };
+  if (gameType === 'hangman')
+    return { hangman: { category: 'Animals' } };
   return {};
 }
 
@@ -220,6 +225,16 @@ const GAME_TEMPLATE = [
       },
     },
     timeLimitMs: 15000,
+  },
+  {
+    gameType: 'hangman',
+    config: {
+      hangman: {
+        category: 'Animals',
+        word: 'ELEPHANT',
+      },
+    },
+    timeLimitMs: 30000,
   },
 ];
 
@@ -595,6 +610,84 @@ function KnifeAtCenterConfigForm({
   );
 }
 
+// ─── Hangman config form ──────────────────────────────────────────────────────
+
+const HANGMAN_CATEGORIES = [
+  'Animals',
+  'Countries',
+  'Movies',
+  'Sports',
+  'Food & Drinks',
+  'Technology',
+  'Music',
+  'Science',
+  'Professions',
+];
+
+interface HangmanConfigData { category: string; word?: string; }
+interface HangmanLevel { id: string; name: string; config: Record<string, unknown>; }
+
+function HangmanConfigForm({
+  config,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  onChange: (c: Record<string, unknown>) => void;
+}) {
+  const h = (config['hangman'] as HangmanConfigData | undefined) ?? { category: 'Animals' };
+  const [levels, setLevels] = useState<HangmanLevel[]>([]);
+
+  useEffect(() => {
+    fetch(`${BASE_URL_SD}/admin/games/hangman/levels`)
+      .then((r) => r.json())
+      .then((body: { success: boolean; data: HangmanLevel[] } | HangmanLevel[]) => {
+        const arr = Array.isArray(body) ? body : (body as { data: HangmanLevel[] }).data ?? [];
+        setLevels(arr);
+      })
+      .catch(() => {});
+  }, []);
+
+  const wordsForCategory = levels.filter(
+    (l) => (l.config as Record<string, unknown>)['clue'] === h.category,
+  );
+
+  const update = (patch: Partial<HangmanConfigData>) =>
+    onChange({ hangman: { ...h, ...patch } });
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+        Category
+      </label>
+      <select
+        value={h.category}
+        onChange={(e) => update({ category: e.target.value, word: undefined })}
+        className="w-full px-3 py-2 rounded-lg bg-[#0A0A14] border border-[#2A2A4A] text-sm text-gray-100 focus:outline-none focus:border-[#7C3AED] transition-colors"
+      >
+        {HANGMAN_CATEGORIES.map((cat) => (
+          <option key={cat} value={cat}>{cat}</option>
+        ))}
+      </select>
+      <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-2">
+        Word
+      </label>
+      <select
+        value={h.word || ''}
+        onChange={(e) => update({ word: e.target.value || undefined })}
+        className="w-full px-3 py-2 rounded-lg bg-[#0A0A14] border border-[#2A2A4A] text-sm text-gray-100 focus:outline-none focus:border-[#7C3AED] transition-colors"
+      >
+        <option value="">Random from category</option>
+        {wordsForCategory.map((l) => (
+          <option key={l.id} value={(l.config as Record<string, unknown>)['answer'] as string}>
+            {(l.config as Record<string, unknown>)['answer'] as string}
+          </option>
+        ))}
+      </select>
+      <p className="text-[10px] text-gray-500">{wordsForCategory.length} words available in {h.category}</p>
+    </div>
+  );
+}
+
 // ─── Marker card ──────────────────────────────────────────────────────────────
 
 function MarkerCard({
@@ -651,6 +744,11 @@ function MarkerCard({
     if (marker.gameType === 'knife_at_center') {
       return (
         <KnifeAtCenterConfigForm config={marker.config} onChange={(c) => onUpdate({ config: c })} />
+      );
+    }
+    if (marker.gameType === 'hangman') {
+      return (
+        <HangmanConfigForm config={marker.config} onChange={(c) => onUpdate({ config: c })} />
       );
     }
     return (

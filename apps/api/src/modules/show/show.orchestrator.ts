@@ -241,6 +241,49 @@ export class ShowOrchestrator {
           this.logger.debug(`[KAC] questionConfig = ${JSON.stringify(questionConfig)}`);
         }
 
+        // For hangman: use explicit word if provided, otherwise pick random from category
+        if (marker.gameType === 'hangman') {
+          const h = (marker.config['hangman'] ?? marker.config) as Record<string, unknown>;
+          const category = h['category'] as string | undefined;
+          const explicitWord = h['word'] as string | undefined;
+
+          if (explicitWord) {
+            // Admin provided a specific word — use it directly
+            questionConfig = {
+              ...marker.config,
+              hangman: {
+                ...h,
+                clue: category || 'Guess the word',
+                answer: explicitWord.toUpperCase(),
+              },
+            };
+          } else if (category) {
+            // Pick a random word from the category
+            const allLevels = await this.gamePackagesService.getLevels('hangman');
+            const matching = allLevels.filter(
+              (l) => (l.config as Record<string, unknown>)['clue'] === category,
+            );
+            if (matching.length > 0) {
+              const picked = matching[Math.floor(Math.random() * matching.length)];
+              const levelConfig = picked.config as Record<string, unknown>;
+              questionConfig = {
+                ...marker.config,
+                hangman: {
+                  ...h,
+                  clue: levelConfig['clue'],
+                  answer: levelConfig['answer'],
+                },
+              };
+            } else {
+              this.logger.warn(`hangman: no levels found for category "${category}" — round ${i} will have no word`);
+            }
+          }
+        }
+
+        // Persist resolved config back onto marker so getCorrectAnswerText
+        // can read it later at round close (e.g. hangman resolved answer)
+        marker.config = questionConfig;
+
         const questionEvent = this.gameRegistry.buildQuestionEvent(
           marker.gameType,
           questionConfig,
