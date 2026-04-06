@@ -241,6 +241,27 @@ export class ShowOrchestrator {
           this.logger.debug(`[KAC] questionConfig = ${JSON.stringify(questionConfig)}`);
         }
 
+        // For wording: resolve the level config from DB
+        if (marker.gameType === 'wording') {
+          const w = (marker.config['wording'] ?? marker.config) as Record<string, unknown>;
+          const levelId = w['levelId'] as string | undefined;
+          if (levelId) {
+            const level = await this.gamePackagesService.getLevelCachedById(levelId);
+            if (level) {
+              questionConfig = {
+                ...marker.config,
+                wording: {
+                  ...w,
+                  board: (level.config as Record<string, unknown>)['board'],
+                  words: (level.config as Record<string, unknown>)['words'],
+                },
+              };
+            } else {
+              this.logger.warn(`wording level "${levelId}" not found — round ${i} will pick random`);
+            }
+          }
+        }
+
         // For hangman: use explicit word if provided, otherwise pick random from category
         if (marker.gameType === 'hangman') {
           const h = (marker.config['hangman'] ?? marker.config) as Record<string, unknown>;

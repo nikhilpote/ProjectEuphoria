@@ -32,6 +32,7 @@ const GAME_TYPES = [
   'find_items',
   'memory_grid',
   'tap_tap_shoot',
+  'wording',
 ];
 
 const GAME_TYPE_LABELS: Record<string, string> = {
@@ -45,6 +46,7 @@ const GAME_TYPE_LABELS: Record<string, string> = {
   find_items: 'Find Items',
   memory_grid: 'Memory Grid',
   tap_tap_shoot: 'Tap Tap Shoot',
+  wording: 'Wording',
 };
 
 const GAME_TYPE_SHORT: Record<string, string> = {
@@ -58,6 +60,7 @@ const GAME_TYPE_SHORT: Record<string, string> = {
   find_items: 'FI',
   memory_grid: 'MG',
   tap_tap_shoot: 'TTS',
+  wording: 'WRD',
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -97,7 +100,7 @@ function formatScheduledAt(iso: string): string {
 }
 
 function defaultScheduledAt(): string {
-  const d = new Date(Date.now() + 60 * 60 * 1000);
+  const d = new Date(Date.now() + 60 * 1000);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -157,6 +160,8 @@ function defaultConfig(gameType: string): Record<string, unknown> {
     return { hangman: { category: 'Animals' } };
   if (gameType === 'tap_tap_shoot')
     return { tapTapShoot: { requiredScore: 4 } };
+  if (gameType === 'wording')
+    return { wording: { requiredScore: 10 } };
   return {};
 }
 
@@ -249,6 +254,15 @@ const GAME_TEMPLATE = [
       },
     },
     timeLimitMs: 45000,
+  },
+  {
+    gameType: 'wording',
+    config: {
+      wording: {
+        requiredScore: 10,
+      },
+    },
+    timeLimitMs: 99000,
   },
 ];
 
@@ -638,6 +652,113 @@ const HANGMAN_CATEGORIES = [
   'Professions',
 ];
 
+// ─── Wording Config ──────────────────────────────────────────────────────────
+
+interface WordingLevel { id: string; name: string; config: { board?: string; words?: string[]; wordCount?: number }; }
+
+function WordingConfigForm({
+  config,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  onChange: (c: Record<string, unknown>) => void;
+}) {
+  const w = (config['wording'] ?? {}) as Record<string, unknown>;
+  const [levels, setLevels] = useState<WordingLevel[]>([]);
+  const [previewLevel, setPreviewLevel] = useState<WordingLevel | null>(null);
+
+  useEffect(() => {
+    fetch(`${BASE_URL_SD}/admin/games/wording/levels`)
+      .then((r) => r.json())
+      .then((body: { success: boolean; data: WordingLevel[] } | WordingLevel[]) => {
+        const arr = Array.isArray(body) ? body : (body as { data: WordingLevel[] }).data ?? [];
+        setLevels(arr);
+      })
+      .catch(() => {});
+  }, []);
+
+  const selectedLevelId = (w.levelId as string) || '';
+  const selectedLevel = levels.find((l) => l.id === selectedLevelId);
+
+  const update = (patch: Record<string, unknown>) =>
+    onChange({ wording: { ...w, ...patch } });
+
+  const boardToGrid = (board: string) => {
+    const rows = [];
+    for (let i = 0; i < 16; i += 4) rows.push(board.slice(i, i + 4).split(''));
+    return rows;
+  };
+
+  const lvl = previewLevel || selectedLevel;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1">
+        <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+          Score to reach
+        </label>
+        <input
+          type="number"
+          min={1}
+          max={200}
+          value={(w.requiredScore as number) ?? 10}
+          onChange={(e) => update({ requiredScore: parseInt(e.target.value) || 10 })}
+          className="w-24 rounded-md bg-gray-800 border border-gray-700 px-2 py-1 text-sm text-gray-100 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+          Level
+        </label>
+        <select
+          value={selectedLevelId}
+          onChange={(e) => {
+            update({ levelId: e.target.value || undefined });
+            setPreviewLevel(null);
+          }}
+          className="w-full px-3 py-2 rounded-lg bg-[#0A0A14] border border-[#2A2A4A] text-sm text-gray-100 focus:outline-none focus:border-[#7C3AED] transition-colors"
+        >
+          <option value="">Random</option>
+          {levels.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name} ({l.config.wordCount ?? '?'} words)
+            </option>
+          ))}
+        </select>
+      </div>
+      {lvl && lvl.config.board && (
+        <div className="mt-1 p-2 rounded-lg bg-[#0A0A14] border border-[#2A2A4A]">
+          <div className="grid grid-cols-4 gap-1 w-fit mx-auto mb-2">
+            {boardToGrid(lvl.config.board).flat().map((letter, i) => (
+              <div
+                key={i}
+                className="w-8 h-8 rounded flex items-center justify-center text-sm font-bold bg-purple-900/50 text-purple-200 border border-purple-700/30"
+              >
+                {letter}
+              </div>
+            ))}
+          </div>
+          <div className="text-[10px] text-gray-500 text-center">
+            {lvl.config.wordCount ?? lvl.config.words?.length ?? '?'} words
+          </div>
+          {lvl.config.words && (
+            <details className="mt-1">
+              <summary className="text-[10px] text-gray-600 cursor-pointer hover:text-gray-400">
+                Show words
+              </summary>
+              <div className="mt-1 max-h-32 overflow-y-auto text-[10px] text-gray-500 leading-relaxed">
+                {lvl.config.words.join(', ')}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Hangman Config ──────────────────────────────────────────────────────────
+
 interface HangmanConfigData { category: string; word?: string; }
 interface HangmanLevel { id: string; name: string; config: Record<string, unknown>; }
 
@@ -786,6 +907,11 @@ function MarkerCard({
           />
           <span className="text-[10px] text-gray-600">Players must reach this score to survive</span>
         </div>
+      );
+    }
+    if (marker.gameType === 'wording') {
+      return (
+        <WordingConfigForm config={marker.config} onChange={(c) => onUpdate({ config: c })} />
       );
     }
     return (
@@ -1094,19 +1220,20 @@ interface ShowEditorModalProps {
 }
 
 function ShowEditorModal({ onClose, onSaved, onToast, editShow }: ShowEditorModalProps) {
-  const isEditing = editShow !== undefined;
+  const isEditing = editShow !== undefined && !!editShow.id;
+  const hasPrefill = editShow !== undefined;
 
   // ── Show metadata
-  const [title, setTitle] = useState(isEditing ? editShow!.title : '');
+  const [title, setTitle] = useState(hasPrefill ? editShow!.title : '');
   const [scheduledAt, setScheduledAt] = useState(
-    isEditing ? isoToDatetimeLocal(editShow!.scheduledAt) : defaultScheduledAt(),
+    hasPrefill ? isoToDatetimeLocal(editShow!.scheduledAt) : defaultScheduledAt(),
   );
   const [lobbyDurationMs, setLobbyDurationMs] = useState(
-    isEditing ? (editShow!.lobbyDurationMs ?? 10000) : 10000,
+    hasPrefill ? (editShow!.lobbyDurationMs ?? 10000) : 10000,
   );
 
   // ── Video
-  const [videoUrl, setVideoUrl] = useState(isEditing ? (editShow!.videoUrl ?? '') : '');
+  const [videoUrl, setVideoUrl] = useState(hasPrefill ? (editShow!.videoUrl ?? '') : '');
   const [videoDuration, setVideoDuration] = useState(DEFAULT_VIDEO_DURATION);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -1122,7 +1249,7 @@ function ShowEditorModal({ onClose, onSaved, onToast, editShow }: ShowEditorModa
 
   // ── Markers
   const [markers, setMarkers] = useState<UIMarker[]>(() =>
-    isEditing ? rawSequenceToUIMarkers(editShow!.gameSequence) : [],
+    hasPrefill ? rawSequenceToUIMarkers(editShow!.gameSequence) : [],
   );
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
 
@@ -2351,6 +2478,23 @@ export function ShowsPage() {
     }
   };
 
+  const handleDuplicate = async (show: Show) => {
+    try {
+      const detail = await getShowDetail(show.id);
+      setEditingShow({
+        id: '',  // empty id = create mode (not edit)
+        title: detail.title + ' (copy)',
+        status: 'scheduled',
+        scheduledAt: new Date(Date.now() + 60 * 1000).toISOString(),
+        lobbyDurationMs: detail.lobbyDurationMs,
+        videoUrl: detail.videoUrl,
+        gameSequence: detail.gameSequence,
+      });
+    } catch (err) {
+      pushToast('error', err instanceof Error ? err.message : 'Failed to load show');
+    }
+  };
+
   const handleEdit = async (show: Show) => {
     try {
       const detail = await getShowDetail(show.id);
@@ -2491,6 +2635,16 @@ export function ShowsPage() {
                             <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
                           </svg>
                           Edit
+                        </button>
+                        <button
+                          onClick={() => handleDuplicate(show)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-amber-400 border border-amber-500/30 hover:bg-amber-500/10 hover:border-amber-400/50"
+                        >
+                          <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                            <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
+                          </svg>
+                          Duplicate
                         </button>
                         {canDelete(show) && (
                           <button

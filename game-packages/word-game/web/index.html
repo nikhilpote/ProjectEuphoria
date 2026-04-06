@@ -1,0 +1,1750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Wording</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-user-select:none; outline:none; }
+html, body { background:#0D0D1A; color:#fff; height:100%; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+a { white-space:nowrap; }
+input { user-select:auto; -webkit-user-select:auto; }
+
+.scoreAdd { animation:scoreAdd .3s ease-in-out .2s 1 forwards; }
+@keyframes scoreAdd { 0%{color:#fff} 40%{transform:translateY(-15%);color:#3D3} 100%{transform:translateY(0);color:#3D3} }
+
+.goodWord { animation:goodWord .3s ease-in-out 1 forwards; }
+@keyframes goodWord { 0%{transform:scale(1);color:#fff} 40%{transform:scale(1.2) translateY(5%);color:#3D3} 100%{transform:scale(.5) translateY(-55%);color:#6F6;opacity:0} }
+
+.badWord { animation:badWord .3s ease-in-out 1 forwards; }
+@keyframes badWord { 0%{transform:translateX(0);color:#fff} 33%{transform:translateX(2%);color:#F55} 66%{transform:translateX(-2%);color:#F55} 100%{transform:translateX(0);color:#F55} }
+
+.didWord { animation:didWord .3s ease-in-out 1 forwards; }
+@keyframes didWord { 0%{transform:translateX(0);color:#fff} 33%{transform:translateX(1%);color:#888} 66%{transform:translateX(-1%);color:#888} 100%{transform:translateX(0);color:#888} }
+
+.shake { animation:shake .4s ease-in-out 1 forwards; background:#F55; transition:all .2s ease; }
+@keyframes shake { 0%{transform:translateX(0)} 33%{transform:translateX(2%)} 66%{transform:translateX(-2%)} 100%{transform:translateX(0)} }
+
+@keyframes blink { 0%{opacity:1} 10%{opacity:0} 50%{opacity:0} 60%{opacity:1} 100%{opacity:1} }
+.tileOuter { transition:all 1s linear; }
+
+.tile { overflow:hidden; z-index:1; background:linear-gradient(0deg, #5B21B6 50%, #7C3AED 100%); color:#FFF; position:relative; font-size:18rem; font-weight:bold; cursor:pointer; width:100%; height:100%; border-radius:3rem; display:flex; align-items:center; justify-content:center; border-bottom:.5rem solid #3B0764; }
+.tile.down { background:linear-gradient(0deg, #059669 50%, #10B981 100%); border-bottom-color:#064E3B; }
+.tile.did { animation:.8s ease 0s 1 normal forwards running goGrey; }
+.tile.bad { animation:.8s ease 0s 1 normal forwards running goRed; }
+.tileBg { position:absolute; top:0; left:0; bottom:0; right:0; display:flex; align-items:center; justify-content:center; }
+.tileGoodBg { position:absolute; top:0; left:0; bottom:0; right:0; opacity:0; background:linear-gradient(0deg, #10B981 50%, #6EE7B7 100%); }
+.tile.good .tileGoodBg { animation:.4s ease 0s 1 normal forwards running fadeInBlink; }
+
+@keyframes goRed { 0%{filter:brightness(.8) hue-rotate(55deg)} 100%{filter:brightness(1) hue-rotate(0deg)} }
+@keyframes goGrey { 0%{filter:brightness(.8) grayscale(1)} 100%{filter:brightness(1) grayscale(0)} }
+@keyframes fadeInBlink { 0%{opacity:0} 5%{opacity:1;filter:brightness(1)} 25%{opacity:1;filter:brightness(1.5)} 45%{opacity:1;filter:brightness(1)} 100%{opacity:0} }
+
+.goGreenEmoji { animation:goGreenEmoji .4s ease 1 forwards; }
+@keyframes goGreenEmoji { 0%{color:#fff} 50%{color:#10B981} 100%{color:#fff} }
+
+.fadeOutUp { animation:fadeOutUp .4s ease 1 forwards; }
+@keyframes fadeOutUp { 0%{top:10rem;opacity:0} 10%{top:9rem;opacity:1} 100%{top:4rem;opacity:0} }
+
+.score { font-family:'SF Mono','Roboto Mono',monospace; font-weight:bold; }
+
+/* Euphoria HUD */
+#euphoria-hud {
+  position:fixed; top:8px; left:50%; transform:translateX(-50%);
+  z-index:99999; pointer-events:none; display:flex; align-items:center; gap:8px;
+  background:rgba(13,13,26,0.9); border:1px solid #2A2A4A; border-radius:20px;
+  padding:6px 14px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  font-size:14px; font-weight:700; color:#9CA3AF;
+}
+#hud-status { display:none; font-size:11px; font-weight:800; letter-spacing:1px; padding:2px 8px; border-radius:10px; }
+#hud-status.passed { display:inline; background:#10B981; color:#fff; }
+
+#page {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  height:100vh; width:100%; padding:40px 8px 8px;
+}
+#gGameDiv { display:none; width:100%; max-width:400px; }
+#gBoardDiv { display:flex; flex-wrap:wrap; width:100%; aspect-ratio:1; }
+#gScoreRowDiv { text-align:center; font-size:8rem; padding:2rem 0; }
+#gTimeRowDiv { text-align:center; font-size:5rem; color:#9CA3AF; position:relative; }
+#gTimeAddDiv { position:absolute; right:2rem; color:#10B981; font-size:4rem; }
+#gWordNowDiv { text-align:center; font-size:7rem; min-height:8rem; font-weight:bold; }
+#gWordLastDiv { text-align:center; font-size:4rem; color:#6B7280; min-height:5rem; }
+#gWordLastInfoDiv { text-align:center; font-size:3rem; color:#4B5563; }
+#gPauseDiv { display:none; }
+#gPausedDiv, #gGameOverDiv, #gGameLoadingDiv, #gTitleDiv, #gTutorialDiv, #gScoresPageDiv { display:none; }
+#gFooter { display:none; }
+#gBackButton, #gSoundButton, #gReportWordDiv { display:none !important; }
+#gDemoDiv { display:none; }
+#gDailyDiv, #gDailyNextDiv { display:none; }
+#gTitlePlayDiv, #gTitleLoadingDiv { display:none; }
+#gWordViewingWordDiv, #gWordViewingDefDiv { display:none; }
+</style>
+</head>
+<body>
+<div id="euphoria-hud">
+  <span id="hud-score">0 / 10</span>
+  <span id="hud-status"></span>
+</div>
+
+<div id="page">
+  <div id="gGameDiv">
+    <div id="gScoreRowDiv"><span id="gScoreDiv">0</span></div>
+    <div id="gWordNowDiv"></div>
+    <div id="gBoardDiv"></div>
+    <div id="gTimeRowDiv"><span id="gTimeDiv">99</span><span id="gTimeAddDiv"></span></div>
+    <div id="gWordLastDiv"></div>
+    <div id="gWordLastInfoDiv"></div>
+  </div>
+</div>
+
+<!-- Hidden elements the game code references -->
+<div id="gPauseDiv" style="display:none"></div>
+<div id="gPausedDiv" style="display:none"></div>
+<div id="gGameOverDiv" style="display:none"></div>
+<div id="gGameLoadingDiv" style="display:none"></div>
+<div id="gTitleDiv" style="display:none"></div>
+<div id="gTutorialDiv" style="display:none"></div>
+<div id="gTutorialPlayDiv" style="display:none"></div>
+<div id="gScoresPageDiv" style="display:none"></div>
+<div id="gScoresDiv" style="display:none"></div>
+<div id="gWordsDiv" style="display:none"></div>
+<div id="gBackButton" style="display:none"></div>
+<div id="gSoundButton" style="display:none"></div>
+<div id="gPlayButton" style="display:none"></div>
+<div id="gPlayDailyButton" style="display:none"></div>
+<div id="gLevelNumberInput" style="display:none"></div>
+<div id="gDemoDiv" style="display:none"><div id="gDemoText"></div></div>
+<div id="gDailyDiv" style="display:none"></div>
+<div id="gDailyNextDiv" style="display:none"></div>
+<div id="gTitlePlayDiv" style="display:none"></div>
+<div id="gTitleLoadingDiv" style="display:none"></div>
+<div id="gReportWordDiv" style="display:none"></div>
+<div id="gReportWordSpan" style="display:none"></div>
+<div id="gReportWordModal" style="display:none"></div>
+<div id="gWordViewingWordDiv" style="display:none"></div>
+<div id="gWordViewingDefDiv" style="display:none"></div>
+<div id="gFooter" style="display:none"></div>
+<div id="gScoreRowDiv2" style="display:none"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// LEVELS DATA
+// ═══════════════════════════════════════════════════════════
+var LEVELS = [{"id":1,"board":"CQUSKAVRABOESPDW","words":["CAB","CABS","CAVE","CAVED","QUA","QUACK","QUAVER","QUAVERS","US","SURE","SUAVE","AVE","AVOW","AVER","ABOVE","ABODE","AVERS","AVOWED","VAC","VOW","VOWED","RE","ROB","ROD","ROE","ROW","REV","RED","ROBS","ROVE","RODE","REVS","REDO","ROVED","ROWED","AS","ASP","ABACK","BAA","BAP","BOA","BOP","BOD","BOW","BAPS","BACK","BAAS","BOPS","BODE","BORE","BOER","BORED","BOERS","BOWED","BOWER","BOWERS","OP","OR","OW","OAK","OPS","OVA","ODE","ORS","ORE","OWE","OVER","OWED","ER","SAP","SPA","SPORE","PA","PO","PAS","POD","POW","PORE","PORED","POWER","POWDER","POWERS","POWDERS","DO","DOE","DEW","DOVE","DOER","DERV","DOERS","DOWER","DOWERS","WE","WOE","WED","WOVE","WORE","DOPS","DOP","ABS","CAVERS","CAVER","OVERS"]},{"id":2,"board":"RPDEESAUSCBGTUAR","words":["RE","RES","REP","REC","REST","REPS","RECS","RECAP","RECAPS","PA","PER","PAS","PAD","PEST","PASS","PACE","PACT","PADS","PRESS","PASSE","PACER","PACES","PACTS","PASSER","PACERS","DAB","DUB","DUE","DUG","DACE","DABS","DAUB","DUBS","DAUBS","EASE","EASES","ER","SEC","SPA","SAP","SAC","SAD","SAG","SECS","SECT","SPEC","SCUT","SCAB","SCAR","SACS","SAGA","SECTS","SPECS","SPACE","SPADE","SCUTS","SCUBA","SPACER","SPACES","AS","AD","APE","ASS","ASP","ACE","ACT","ADS","ABC","APES","APSE","ACES","ACTS","ABCS","ABUT","AGUE","APSES","ABUSE","ABUTS","ASPECT","ABUSER","ABUSES","ABACUS","ASPECTS","ABUSERS","ABACUSES","SUB","STUB","SUBS","STUBS","SCABS","SCUBAS","CUT","CUB","CAP","CAD","CAB","CAR","CUSS","CUTS","CUBS","CAPE","CAPS","CASE","CADS","CABS","CARB","CAPER","CAPES","CASES","CAUSE","CARBS","CAPERS","CAUSES","BUS","BUT","BAP","BAD","BAG","BAR","BUD","BUG","BRA","BUST","BUSS","BUTS","BAPS","BASE","BASS","BADE","BUDS","BRAG","BUSES","BASER","BASES","BRACE","BRACT","BASEST","BRACER","BRACES","BRACTS","BRACERS","GAP","GAS","GAD","GAB","GAPE","GAPS","GASP","GADS","GABS","GARB","GRAB","GAPES","GASES","GAUSS","GARBS","GRACE","GRABS","GRACES","TUB","TUBS","TUBA","TUBAS","US","USE","USER","USES","USERS","ABASE","AGAPE","ARGUE","ABASES","ARGUED","RAG","RACE","RACER","RACES","RACERS","GAR","ABS","ADE","SCAPE","SCAPES"]},{"id":3,"board":"PFAUSTBLHAKYRILL","words":["FA","FAT","FAB","FATS","FATAL","FATALLY","AT","AFT","ALB","ABLY","ALKYL","ALKALI","SAT","SHAT","STAR","STAB","SARI","SAIL","SHAKY","SHALY","SHALL","SHILY","STAIR","STALK","STALL","SALLY","SHRILL","STABLY","SHRILLY","SHAKILY","TAR","TAB","TSAR","THAI","TAIL","TABU","TALI","TALK","TALL","TABLA","TALLY","THRALL","THRILL","BY","BAH","BAR","BAT","BASH","BAST","BATS","BATH","BAIL","BALK","BALL","BULK","BATHS","BAULK","BULKY","BULKILY","LA","LAB","LATH","LATHS","HA","HI","HAS","HAT","HASP","HATS","HAIR","HAIL","HALL","HILL","HILLY","AS","AH","ASP","ASH","AIR","AIL","ALL","ALLY","ABAFT","KIR","KILL","RAT","RASP","RASH","RATS","RAIL","RILL","RASTA","RALLY","ILK","ILL","LAS","LAH","LASH","LAST","LAHS","LAIR","LIRA","LIAR","LIRAS","SHILL","LATS","LAT"]},{"id":4,"board":"EOPYNDDLXNAEABKS","words":["EN","END","EON","EDDY","ON","OP","ONE","ODE","ODD","ODES","ODDLY","PO","POD","PLY","POND","PLAN","PLEA","PLANK","PLEAD","PLEAS","PLANKS","PLANNED","PLANKED","NO","NOD","NODE","NEDDY","NODDY","NODAL","NODES","NODDLE","NODDLES","DO","DEN","DOE","DON","DAB","DAD","DAL","DONE","DOPY","DANK","DADO","DALE","DONNA","DANDY","DALES","DONNAS","DANDLE","DANDLES","DEAD","DEAN","DEAL","DESK","DEADEN","LA","LAD","LAB","LAS","LED","LEA","LADE","LAND","LANK","LADY","LAKE","LEAD","LEAN","LEAK","LEAS","LADEN","LADES","LAKES","LEAKS","LEADEN","NAB","NAKED","NAKEDLY","AD","AN","AS","ADO","ADD","AND","ALP","ALE","ASK","ALES","ADDLE","ASKED","ADDLES","ABANDON","ABANDONED","ELAN","ELAND","AX","ANAL","ABASE","ABASED","BAN","BAD","BAND","BANK","BADE","BAKE","BALD","BALE","BASK","BASE","BANDY","BANAL","BANKS","BADDY","BADLY","BAKED","BAKES","BALED","BALES","BASED","BANNED","BANKED","BASKED","BASELY","KEA","KALE","KEAS","KELP","KALES","SAD","SKA","SEA","SAND","SANK","SAKE","SALE","SEAL","SANDY","SADLY","SEDAN","SADDLE","SADDEN","DOP","NAK","NAKS","ADE","PONE"]},{"id":5,"board":"KLODBANNAOIGSTHN","words":["LA","LO","LAB","LAND","LAIN","LOAN","LONG","LOANING","ON","OAK","ONION","DO","DON","DONG","DONNA","DONNING","BAA","BAT","BAN","BOA","BAST","BATS","BATH","BAAS","BALK","BAND","BANG","BAIT","BOAS","BOAT","BOTH","BOND","BATON","BLAND","BLOND","BAITS","BOAST","BOATS","BATHOS","BONING","BASTION","BASTING","BATHING","BANNING","BOATING","BOASTING","AN","ALB","AND","ANON","ALONG","ABATING","NO","NAB","NOB","NOS","NOT","NOH","NOD","NIT","NITS","NIGHT","NOTING","NIGHTS","NOTHING","AS","AT","ATONAL","ABANDON","ATONING","ABANDONING","OI","OH","OAT","OAST","OATS","OATH","OBLONG","IT","IN","ION","ITS","INN","IOTA","IOTAS","GIT","GIN","GITS","GHOST","SO","SAT","SOB","SON","SOH","SOAK","SONG","STAB","SABOT","SATIN","STING","SATING","STONING","TO","TI","TAB","TON","TIN","TOSA","TING","THIN","TABLA","TONAL","THONG","THING","TONING","HO","HI","HOB","HOT","HIT","HOST","HOTS","HITS","HIND","HONING","HOSTING","BONG","NAK","TONG","BOING"]},{"id":6,"board":"YBRSAANMNDOEDITN","words":["YARN","YARNS","BY","BAY","BAN","BAA","BAD","BAR","BRA","BAND","BARN","BARS","BARM","BANS","BANE","BRAY","BRAN","BRAD","BARNS","BARMS","BRAND","BRANS","BANDIT","RAY","RAN","RAD","RAND","RANI","RADIO","RADON","RANDOM","RADONS","SNOT","SMOTE","AN","AD","AND","ADD","ADO","ANION","ANIONS","ABANDON","ABANDONS","ABANDONMENT","ARM","ARMS","ANON","NO","NAY","NAN","NAB","NOD","NOT","NET","NANA","NOTE","NONE","NEON","NOMEN","ME","MOA","MOD","MOT","MEN","MET","MOAN","MOTE","MEND","MOANS","MONAD","MONDAY","MENTION","MENTIONS","NIT","NANS","DO","DAY","DAB","DIN","DID","DON","DOT","DOM","DOE","DARN","DANE","DONS","DONE","DOTE","DOMS","DOME","DARNS","DINAR","DINARS","OI","ON","OAR","ODD","ONE","OARS","OMEN","OMENS","EN","EM","END","ENS","EON","EMS","EONS","IN","ID","IT","ION","IONS","ITEM","INANE","ITEMS","TI","TO","TE","TIN","TOD","TON","TOM","TOE","TEN","TOAD","TONS","TONE","TOMS","TOME","TEND","TENS","TODAY","TENON","TENDON","TENONS","NEONS","NOMENS","DONT","DIT","NOM"]},{"id":7,"board":"SMOSEDNAWNNBSTAP","words":["SEW","SEWS","SEWN","SEND","SENT","SENNA","SENNAS","ME","MEW","MED","MEN","MOD","MOA","MEWS","MEDS","MEND","MODE","MOAN","MOAS","MENDS","MODES","MOANS","ON","ODE","OMEN","ODES","OMENS","SO","SOD","SON","SOME","SODS","SAND","SANDS","EM","EN","EMS","ENS","END","ENDS","DO","DEW","DEN","DOM","DON","DOS","DEWS","DEMO","DENS","DENT","DOMS","DOME","DONS","DEMON","DEMOS","DENTS","DOMES","DONNA","DEMONS","DONNAS","NO","NOD","NOS","NAN","NAB","NODS","NODE","NANA","NOMEN","NODES","NANNA","NOMENS","AN","AS","AND","ANT","ANTS","ANODE","ANODES","ABANDON","ABANDONS","ABANDONMENT","ABANDONMENTS","WE","WED","WEN","WEDS","WENS","WEND","WENT","WENDS","NEW","NAP","NEWS","NEWT","NEWTS","NANS","BAN","BAT","BAP","BANE","BANS","BAND","BATS","BANES","BANDS","BANNS","BANNED","SNAP","STAB","STAND","STANDS","TAN","TAB","TAP","TANS","TANDEM","TANNED","TANDEMS","AT","ANEW","PA","PAN","PAT","PANE","PANS","PANT","PATS","PANES","PANED","PANTS","PANNED","NOM"]},{"id":8,"board":"IIDNXEOASNBPDEEA","words":["ID","ION","IDES","IONS","DO","DIE","DEN","DEB","DOE","DON","DAB","DIES","DENS","DENE","DOES","DONS","DONE","DOPE","DIXIE","DENSE","DENES","DIXIES","NO","NOD","NOB","NAB","NAP","NOES","NONE","NODE","NAPE","NONES","NODES","XENON","EX","EN","ENS","END","EON","ENDS","EONS","OI","ON","OP","ONE","ODE","ONES","ODES","OPEN","OBESE","OPENS","OPENED","AD","AN","ADO","AND","APE","ANON","ADOBE","ABODE","ANODE","ADOBES","ABODES","ANODES","SEX","SEE","SEND","SNOB","SEEN","SEEP","SEDAN","NEE","NEON","NEED","NEAP","NEEDS","BE","BEN","BED","BEE","BOD","BOA","BOP","BAD","BAN","BAP","BENS","BEND","BEDS","BEEN","BEEP","BOND","BONE","BODE","BEES","BADE","BAND","BENDS","BONDS","BONES","BONED","BODES","BODIES","BANDIES","PO","PA","POD","PEN","PEE","PEA","PAD","PAN","POND","PENS","PEES","PEED","PEEN","PONDS","PEENS","DEE","DEEP","ABANDON","ABANDONS","ABANDONED","DOP","NOPE","ADE","POI","PONES","PONE"]},{"id":9,"board":"JAZTBILSAAMHESUT","words":["JAB","JIB","JAIL","JILT","JAILS","JILTS","AIL","AIM","AILS","AIMS","ALAS","ALMS","ABASE","ALIAS","AZIMUTH","AZIMUTHS","BAA","BIZ","BAIL","BAAS","BASE","BALM","BIAS","BIZS","BAILS","BASAL","BALMS","BASALT","BASALTS","LA","LAB","LIB","LAS","LAM","LAMS","LABIA","SLAB","SLIM","SLAM","SMUT","SHUT","SLIMS","SLAMS","AS","AM","AMUSE","MI","MA","MU","MIL","MUS","MILT","MILS","MAIL","MALT","MUSE","MILTS","MAILS","MALTS","HUM","HUT","HUMS","SEA","SUM","SAIL","SEAL","SEAM","SALT","SUMS","SAILS","SEALS","SEAMS","SALTS","US","UM","USE","TUM","TUMS","THUS","ALM"]},{"id":10,"board":"ATIVNDIEEBTRASAY","words":["AN","AT","AD","ANT","AND","ANTI","TI","TAN","TIE","TIT","TIDE","TIER","TITS","TIRE","TIDES","TIDBIT","TIDIER","TIDBITS","IT","ID","IDEA","IDES","IDEAS","IDENTITY","VIE","VET","VIDE","VETS","VERY","VIBES","VERITY","NEST","NADIR","NATIVE","NESTER","NATIVITY","DEN","DEB","DIE","DANE","DENT","DEBS","DEBT","DIVE","DIET","DIRT","DIRE","DANES","DEBIT","DEBTS","DEBAR","DIVER","DIETS","DIRTS","DIRTY","DATIVE","DEBITS","DEBATE","DIVERT","DEBATER","DIVERTS","DIETARY","ITS","IRE","IRATE","ER","ERA","ERAS","ERASE","ERASED","EVIDENT","EN","END","EAST","EDIT","EDITS","ESTER","ENTITY","ENTIRE","ENDIVE","EASTER","ENTIRETY","BE","BEN","BED","BIT","BID","BAT","BAR","BAY","BENT","BEND","BEST","BASE","BAST","BIDE","BITS","BITE","BIER","BATS","BARE","BEAST","BASED","BASTE","BIDES","BITER","BESTIR","BESTER","BESTRID","TE","TAB","TAR","TRY","TSAR","TABS","TARE","TRAY","TYRE","TITAN","TRIBE","TRIBES","TRIDENT","RE","RID","RIB","RAT","RAY","REV","RIDE","RIBS","RITE","RASE","RATS","RATE","RIDES","RIVET","RABID","RASED","RIVETS","AS","ABIDE","ABASE","ABATE","ASTIR","ASTER","ABSENT","ABIDES","ABASED","ABATER","ASTRAY","ASTRIDE","SEA","STY","SAT","SAY","SENT","SEND","STIR","STAB","STAR","STAY","SATE","SARI","SEDAN","STARE","STRAY","SATYR","STRIDE","STRIVE","SATIRE","SEDATIVE","STRIDENT","ATE","ART","ARE","ARID","ARTS","ARTY","ABS","BATE","RET","DITS","DIT","TAD","ADE","VIBE","BASTER","DIBS","DIB","BENDIER"]},{"id":11,"board":"AAPESBTRENIEEMTN","words":["AS","ABASE","ABATE","ABSENT","ABATER","ABASEMENT","AT","APT","APE","ATE","APERIENT","PA","PAS","PAT","PET","PER","PATE","PERT","PRIM","PATER","PATEN","PETER","PRINT","PRIME","PATENT","PETITE","PRIMES","PATIENT","ER","ERE","SEE","SAP","SAT","SEEN","SEEM","SENT","SEMI","SATE","SEMEN","SATIN","SEMITE","SATIRE","SENTIENT","BE","BAA","BEE","BEN","BAP","BAT","BIN","BIT","BASE","BAAS","BEEN","BENS","BENT","BINS","BINE","BINT","BITE","BIER","BINES","BITER","BEMIRE","BASEMENT","TI","TE","TAB","TAP","TIN","TIT","TIE","TEN","TABS","TAPE","TINS","TINE","TINT","TIME","TIRE","TIER","TRIM","TENT","TAPER","TINES","TIMES","TRIBE","TRITE","TRIBES","RE","RIB","RIM","REP","RIBS","RIME","RITE","REIN","RENT","RINSE","RIMES","RETIE","REINS","EN","EM","ENS","EMIT","EMIR","ENTER","ENTIRE","NEE","NIB","NIT","NIBS","NINE","NITER","NITRE","IN","IT","IRE","INTER","INERT","INTENT","ME","MI","MEN","MINE","MINT","MITE","MIRE","MIEN","MINES","MITER","MITRE","MINER","MINTER","NET","NINES","ABS","BATE","RET","SNIT","MESA","INS","TRINE","TRINES"]},{"id":12,"board":"DACIBENVASTEMSEM","words":["DAB","DEB","DEN","DABS","DACE","DANE","DEBS","DEAN","DENS","DENT","DENE","DANES","DANCE","DEANS","DENSE","DENTS","DANCES","DEBASE","DECANT","DEBASES","DECANTS","DENSEST","DEBASEMENT","DEBASEMENTS","AD","AN","ACE","ANT","ABET","ACED","ACES","ACNE","ANTE","ANTS","ABASE","ABEAM","ABETS","ACNES","ANTED","ANTES","ABASED","ABASES","ABSENT","ABSENTS","ABSENTEE","ABASEMENT","ABSENTEES","ABASEMENTS","CAD","CAB","CAN","CABS","CANE","CANS","CANT","CENT","CADET","CANED","CANES","CANST","CANTS","CEASE","CENTS","CIVET","CADETS","CANTED","CEASES","CIVETS","IN","ICE","ICED","ICES","INCA","INSET","INSETS","INCEST","INSTEAD","INCESTS","BE","BAD","BAN","BED","BEN","BET","BASE","BASS","BAST","BADE","BANE","BANS","BEAM","BEAD","BEAN","BESS","BEST","BENS","BENT","BETS","BASED","BASTE","BASTS","BASES","BANES","BEAMS","BEAST","BEANS","BESTS","BESET","BENTS","BASSET","BASTED","BASTES","BASEST","BEASTS","BESETS","BESEEM","BASEMENT","BASEMENTS","EN","ENS","EAST","EASE","EASTS","EASES","ESTEEM","EASEMENT","EASEMENTS","NAB","NET","NEE","NABS","NEST","NETS","NICE","NESTS","NICEST","VET","VICE","VINE","VENT","VETS","VICES","VINES","VENTS","VENTED","AM","AS","ASS","ASSET","ASSENT","SEA","SEC","SET","SEE","SEAM","SEAS","SENT","SETS","STEM","SEEN","SEEM","SEDAN","SEAMS","STEAM","STEAD","SEMEN","SECANT","STEAMS","SECANTS","TE","TED","TEA","TES","TEC","TEN","TEE","TEAM","TEAS","TENS","TEEN","TEEM","TEES","TEAMS","TEASE","TENSE","TEENS","TEASES","TENSES","TENSED","EM","EVINCE","EVINCED","EVINCES","MA","MASS","MAST","MASTS","MAENAD","MASTED","MASSED","SEMENS","ME","MET","MEN","MESS","METE","METS","MEET","METED","METES","MEETS","MESSED","MENACE","MENSES","MENACED","MENACES","ABS","ADE","MESAS","MESA","INS"]},{"id":13,"board":"IRAEPWSSXEBARAEV","words":["RIP","RAW","RIPE","RASE","RIPER","RAWER","RASES","AS","AWE","ASS","ARSE","AWES","ARSES","EAR","EARS","EASE","PI","PER","PEW","PEA","PEE","PEWS","PEAR","WE","WEB","WEE","WAR","WAS","WIPE","WEAR","WEBS","WARP","WARS","WIPER","WIPES","WRASSE","SEX","SEW","SEA","SEE","SAW","SERA","SEAR","SARI","SEAS","SAVE","SWIPE","SWEAR","SABER","SAWS","SEARS","EX","ER","ERA","BE","BEE","BAR","BEAR","BESS","BARE","BEEP","BEER","BEES","BASE","BASS","BARES","BASER","BASES","BEARESS","AVE","RE","REP","REX","RES","AX","AXE","ARE","AXES","ARES","ABASE","ABASES","EASES","VAS","VEER","VASE","VASA","VASES","ABS"]},{"id":14,"board":"SEOPDVDLEHEARSAB","words":["SEVER","SEVERS","EVE","EVER","EVES","OP","ODE","OLD","OVER","ODES","OVERHEAD","PO","POD","POLE","PLOD","PLEA","PLEB","POLES","PLEAS","PLEAD","PLOVER","PLEASE","PLOVERS","PLEASED","PLEADED","DEVELOP","VEDA","VOLE","VELD","VEAL","VERSE","VOLES","VERSED","DO","DOE","DEB","DAL","DAB","DOES","DOVE","DOLE","DEAL","DALE","DOVES","DOLES","DALES","DEBASE","DEBASED","LO","LA","LOP","LED","LEA","LAD","LAB","LOVE","LODE","LEAS","LEAD","LADE","LOVED","LOVER","LOVES","LODES","LEVER","LEASE","LEASH","LADES","LADED","LOVERS","LEVERS","LEASED","LEADED","LEASHED","ER","EH","ERSE","HE","HA","HER","HAS","HERS","HELD","HELP","HEAD","HEAL","HEADED","EASE","EASED","AD","ADO","ALE","ALP","ALOE","ALES","ALOES","ABASE","ABASED","ADVERSE","ABASHED","RE","RED","REV","RES","REDS","REVS","RHEA","REVEL","RHEAS","REVEAL","RESEAL","REDHEAD","REDEVELOP","SHE","SEA","SHED","SEAL","SHEDS","SHRED","SHREDS","AH","AS","ASH","AHEAD","BE","BED","BEL","BAH","BAA","BAD","BEDE","BEAD","BASE","BASH","BADE","BAAS","BALD","BALE","BASED","BASER","BAAED","BALES","BALED","BEADED","BASHED","BASHER","BELOVED","BELOVEDS","DOP","SHEA","ADE","REHAB","OVERS","POLED"]},{"id":15,"board":"ABIBSNAPGINSLYGA","words":["AS","AN","ASIAN","ASIANS","ANGINA","ANGLING","ANGINAS","BAN","BIN","BIB","BAP","BANS","BANG","BINS","BIAS","BAIL","BAPS","BASIL","BASIN","BANGS","BANNS","BASING","BASINS","BANIAN","BANANA","BANGING","BANIANS","BANANAS","BINGING","IN","INN","INNS","BIBS","SI","SIN","SANG","SNIP","SNAP","SIGN","SING","SINS","SNIPS","SNAIL","SNAPS","SINGS","SIGNS","SINGLY","NAB","NIL","NIB","NIP","NAN","NAP","NABS","NIBS","NIPS","NAIL","NANS","NANA","NAPS","AIL","ANY","ASP","APING","ABASING","PI","PA","PIN","PAN","PAS","PINS","PING","PANS","PANG","PAIL","PAIN","PINGS","PINNY","PIANI","PANGS","PAINS","PINING","PINGING","PAINING","GIN","GIG","GINS","GIGS","IS","NAG","NAGS","SAP","SPA","SAG","SAIL","SNAG","SPIN","SPAN","SPINS","SPANS","SPANGLING","LING","LIANA","LYING","LIANAS","YIN","YINS","GAS","GASP","GASPING","GASPINGLY","AGING","AGNAIL","ABS","LINGS","BINGS","BING","INS","SANS"]},{"id":16,"board":"NBAHABLTSEAURHGE","words":["NAB","NABS","BAN","BAH","BAT","BASE","BASH","BABE","BALE","BATH","BLAB","BLUE","BASER","BABES","BABEL","BALES","BALER","BLEAT","BLABS","BASHER","BALERS","AH","AT","ALB","ALE","ABBE","ABLE","ALBS","ALES","ABASE","ABBES","ABLER","HA","HAT","HALE","HALT","HABLE","AN","AS","ASH","ABATABLE","BE","BEL","BEG","BAG","BEAN","BELT","BEAT","BEAU","BEAUT","BEGAT","BAGEL","BELUGA","LA","LEA","LEG","LAB","LAH","LAG","LUG","LEAN","LEAS","LABS","LATH","LAHS","LEASH","LAGER","LAUGH","LUGER","LEAGUE","LAGERS","LAUGHS","LAUGHER","LAUGHERS","TAB","TAG","TUG","TABS","TALE","TABLE","TABLA","TALES","TABLES","TABLEAU","SEA","SHE","SEAL","SEAT","SHAG","SHAT","SABLE","SABER","SHALE","SHALT","SHELTA","SHEATH","SABBATH","ER","EH","EBB","EAT","AGE","AGES","AGER","AGUE","AGERS","AUGER","AUGEAN","AUGERS","UGH","RE","RES","REG","REAL","RHEA","REGAL","RHEAS","HE","HER","HAG","HERS","HEAL","HEAT","HAUL","HEATH","HEALTH","HAULER","GEL","GAB","GAL","GUT","GABS","GAEL","GALE","GALA","GAUL","GABLE","GALES","GABBLE","GABLES","GABBLES","EAGER","EATABLE","EATABLES","ABS","BLAH","SHEA","LUGES","LUGE","LAT","REHABS","REHAB"]},{"id":17,"board":"SRABDOTANEORTANS","words":["SO","SOD","SON","SORT","SOAR","SOOT","SOON","SORTED","ROD","ROE","ROT","RAT","RODS","RODE","ROTE","ROTA","ROOT","RATE","RODEO","ROTOR","RATED","RODENT","RODEOS","ROTORS","ROOTED","AT","ART","ATE","ARSON","AORTA","ATONE","ABATE","ARDENT","ATONED","ABATED","BAR","BAT","BAA","BARS","BARD","BARN","BARDS","BARON","BATON","BATED","BARNS","BATONS","BARONS","BARONET","DO","DOS","DON","DOE","DOT","DEN","DRAT","DRAB","DONE","DOTE","DOOR","DENT","DEAN","DENS","DRONE","DOORS","DEANS","DONATE","ON","OR","ODE","ONE","ORS","OAR","OAT","OARS","OATEN","ORATOR","ORATORS","TO","TE","TOD","TON","TOR","TOE","TOO","TED","TEN","TEA","TAR","TAB","TROD","TODS","TONE","TORS","TOED","TEDS","TEND","TENT","TEAT","TENS","TARS","TARO","TONS","TORN","TARN","TONED","TENDS","TENOR","TAROS","TARNS","TENORS","TENANT","TABARD","TABARDS","NO","NOS","NOD","NOR","NOT","NET","NAN","NODS","NODE","NOTE","NOON","NEAT","NEON","NANS","NOTED","NOONS","NEONS","EN","END","EON","EAT","ENS","ENDS","EONS","ORNATE","ROOD","ROAN","ROODS","ROANS","TAN","TANS","TANDOOR","TANDOORS","AN","AND","ANT","ANTE","AEON","ANTED","ANODE","AEONS","SNOT","SNOOD","SNORT","SNOODS","SNORTED","BATE","DONT","TOONS","TOON","SNOOT","ORATE"]},{"id":18,"board":"LTDYAEBDPBEUSATL","words":["LA","LAP","LAB","LEA","LET","LED","LEE","LAPS","LATE","LABS","LEAP","LABEL","LEAPS","TE","TAP","TAB","TEA","TED","TEE","TALE","TAPS","TAPE","TABS","TEAL","TEED","TAPED","TAPAS","TABBY","TEDDY","TABBED","DEB","DEE","DEAL","DEBS","DEBT","DEED","DELTA","DEALT","DEBUT","DEBATE","DEBATED","AT","ALE","APE","ATE","APED","ABET","ABBE","ABATE","ABATED","EAT","EBB","EEL","EDDY","EBBS","EBBED","BE","BY","BEL","BET","BED","BEE","BUT","BUD","BELT","BEAT","BETA","BEET","BEEP","BEEPS","BETAS","BUDDY","DUB","DUE","DEEP","DUET","DUEL","DEEPS","DELTAS","DUBBED","PA","PAL","PAT","PEA","PET","PEE","PAS","PALE","PATE","PELT","PEAL","PEAT","PEED","PEEL","PALED","PETAL","BAP","BAT","BALE","BAPS","BALED","BATED","SPA","SAP","SAT","SPAT","SPED","SATE","SPATE","SPELT","SPEED","SATED","SPEEDY","AS","ASP","TUB","TEAS","TUBE","TUBBED","LEAS","LUTE","LEAPED","ABS","BATE","UTE","LAT"]},{"id":19,"board":"AMERTETANIRBGRAC","words":["AT","AM","ATE","AMEN","AERATE","AERATING","MA","ME","MAT","MET","MEN","MATE","MEAT","MEET","METE","MATER","METER","METRE","MERIT","MATING","MATIER","METING","METIER","MATINEE","MEETING","MEATIER","METERING","EM","ER","ERA","EAT","EAR","EATEN","EATER","EATING","EARRING","RE","RAT","REAR","RATE","RARE","RETIE","RETIRE","RATING","RARING","RETREAT","RETRAIN","REARING","RETREATING","TE","TI","TEA","TEN","TEE","TIN","TIE","TIT","TAME","TEAM","TEEM","TING","TINE","TIER","TIRE","TAMER","TIARA","TERRAIN","EN","ERR","ERRING","TAR","TAB","TEAT","TENT","TINT","TEEN","TEAR","TREE","TRIG","TARE","TREAT","TRITE","TRAIT","TRAIN","TEEING","TEARING","TRAINEE","TREEING","TARRING","TREATING","ARE","ART","ARC","ABC","AREA","ARIA","ARAB","ATRIA","ARETE","ARTIER","ARRAIGN","NET","NEE","NIT","NEAT","NITER","NITRE","IT","IN","IRE","ITEM","INTER","INERT","IRATE","ITERATE","RIG","REAM","RENT","REIN","RITE","RING","RAIN","REIGN","BRA","BAR","BAT","BREN","BRIT","BRIG","BRIE","BRAE","BRAT","BAIT","BARN","BARE","BREAM","BRENT","BRING","BRINE","BRIAR","BRAIN","BAIRN","BARRE","BARING","BARREN","BARTER","BARRING","BARTERING","GIT","GIN","GITE","GIRT","GRIT","GRIN","GRAB","GRAIN","AIR","AINT","ACRE","ABATE","ABATER","ABATING","ABATEMENT","CAR","CAB","CRAB","CAIN","CARE","CART","CARB","CREAM","CREME","CRATE","CAIRN","CARET","CARAT","CRETIN","CRATER","CARNET","CARING","CAREER","CARTER","CREAMER","CRATING","CARTING","CABARET","CREATING","CREMATING","BAREN","BATE","RET","META","TRINE"]},{"id":20,"board":"THUPNSMBENAASMET","words":["THUS","THUMP","THUMB","HUM","HUB","HUMS","HUMP","HUMAN","HUMANE","HUMANS","US","UM","UP","USE","USES","PUS","PUB","PUSH","PUMA","PUMAS","NEST","SUM","SUP","SUB","SAT","SENT","SUMP","SANE","SAME","SATE","SENNA","SEMEN","SAMBA","SENATE","SEMENS","MU","MA","MUS","MAN","MAT","MUST","MUSE","MUSH","MAST","MASH","MANE","MANS","MATE","MUSES","MANES","MANSE","MANSES","BUS","BUM","BAN","BAA","BAT","BUST","BUSH","BUMS","BUMP","BAST","BASE","BASH","BANE","BANS","BAAS","BUSES","BASES","BANNS","BANES","BUSMAN","BUSHMAN","BUSMANS","BUSHMANS","EN","EM","ENS","EMS","ENEMA","ENEMAS","NAB","NET","NAME","NEAT","NAMES","AS","AN","AM","AT","ASH","AMP","ATE","AMEN","AMUSE","ABUSE","ABATE","ASTHMA","AMUSES","AMBUSH","ABUSES","ABATEMENT","ABATEMENTS","ABASE","ABASES","SMASH","SENNAS","SESAME","ME","MEN","MET","MESH","MAMA","MEAN","MEAT","MAMBA","MEANS","MENSES","MEANEST","EAT","EAST","EASE","EASES","ENMESH","TE","TAN","TAB","TEN","TEA","TANS","TAME","TAMP","TABU","TENS","TEAS","TEAM","TAMES","TABUS","TENSE","TEASE","TEAMS","TAMEST","TENSES","TEASES","TENSEST","BATE","META","MESA","SANS"]},{"id":21,"board":"KBAPAELIRTUFSYSL","words":["KEA","KELT","KELP","KELTS","BE","BAR","BAT","BET","BEL","BAP","BAKE","BARS","BARE","BATS","BEAK","BEAR","BEAT","BETA","BETS","BELT","BALE","BAIL","BLUE","BLIP","BAKER","BEARS","BEATS","BELTS","BALER","BLEAK","BLEAT","BLUER","BAKERS","BAKERY","BETULA","BALERS","BAILER","BLEARY","BLEATS","BAILERS","BLUSTER","BALUSTER","BLUSTERS","BLUSTERY","BALUSTERS","ALB","ALE","ALP","AIL","ABET","ABLE","ABATE","ABETS","ABLER","ALERT","ALTAR","ALTER","ABATER","ALERTS","ALTARS","ALTERS","ABATERS","PA","PI","PAL","PALE","PAIL","PLEA","PLEB","PLUS","PILE","PALER","PLEAT","PALTRY","PLEATS","PAILFUL","PAILFULS","AT","ARE","ART","ATE","AREA","ARTS","ARTY","AKELA","ER","EAR","EAT","ERA","ELF","EARS","EATS","LA","LEA","LET","LAB","LAP","LIP","LEAK","LETS","LEAP","LUTE","LUST","LUSTS","LUSTY","LUSTRE","LUSTER","LUSTERS","IF","IFS","ILEA","RE","RAT","RAKE","RATS","RATE","REAL","REAP","REALTY","TE","TAR","TAB","TRY","TEA","TAKE","TARS","TARE","TREK","TEAK","TEAR","TEAL","TYRE","TAKER","TABLE","TABLA","TEARS","TULIP","TAKERS","US","ULTRA","ULSTER","ULSTERS","FLU","FLEA","FLAB","FLAP","FLUE","FLUS","FLIP","FUEL","FILE","FLUTE","FLUTY","FUSTY","FILER","FILERS","FILTER","FLUSTER","FILBERT","FILTERS","FLUSTERS","FILBERTS","STY","STAR","STAB","STAKE","STARE","STEAK","STEAL","STELA","STABLE","STREAK","STABLER","YULE","SUE","SUET","SUFI","SLUE","SLUT","STARS","SUETS","SUETY","SLUTS","SULTRY","BATE","RET","UTE","ARTSY","TEARY"]}];
+
+// ═══════════════════════════════════════════════════════════
+// GLOBAL STUBS
+// ═══════════════════════════════════════════════════════════
+var gSiteUrl = '';
+var gPlatform = 'euphoria';
+var gLog = function() {};
+var gAudio = {
+  load: function() { return {} },
+  play: function() {},
+  stop: function() {},
+  mute: function() {},
+  unMute: function() {},
+  setVolume: function() {},
+  isPlaying: function() { return false }
+};
+var gDemoArrows;
+
+// ═══════════════════════════════════════════════════════════
+// EUPHORIA BRIDGE
+// ═══════════════════════════════════════════════════════════
+var _euphoriaSubmitted = false;
+var _euphoriaStartTs = Date.now();
+var _euphoriaRequired = 10;
+var _euphoriaBoard = '';
+var _euphoriaWords = [];
+var _euphoriaTimeLimitMs = 99000;
+
+function _euphoriaParseInit(g) {
+  if (g && g.requiredScore) _euphoriaRequired = Number(g.requiredScore);
+  if (g && g.board) _euphoriaBoard = g.board;
+  if (g && g.words) _euphoriaWords = g.words;
+  if (g && g.timeLimitMs) _euphoriaTimeLimitMs = Number(g.timeLimitMs);
+  document.getElementById('hud-score').textContent = '0 / ' + _euphoriaRequired;
+}
+
+// 3-channel reception
+if (location.hash && location.hash.length > 1) {
+  try { _euphoriaParseInit(JSON.parse(decodeURIComponent(location.hash.slice(1)))); } catch(e) {}
+}
+if (window.__EUPHORIA_GAME__) _euphoriaParseInit(window.__EUPHORIA_GAME__.payload || window.__EUPHORIA_GAME__);
+window.addEventListener('message', function(e) {
+  var msg;
+  try { msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch(err) { return; }
+  if (msg && msg.type === 'GAME_INIT' && msg.payload) _euphoriaParseInit(msg.payload);
+});
+
+function _euphoriaPostToNative(msg) {
+  var str = JSON.stringify(msg);
+  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(str);
+  else window.parent.postMessage(str, '*');
+}
+
+function _euphoriaCheckScore(score) {
+  document.getElementById('hud-score').textContent = score + ' / ' + _euphoriaRequired;
+  if (score >= _euphoriaRequired && !_euphoriaSubmitted) {
+    _euphoriaSubmitted = true;
+    document.getElementById('hud-status').textContent = 'PASSED';
+    document.getElementById('hud-status').className = 'passed';
+    _euphoriaPostToNative({
+      type: 'SUBMIT_ANSWER',
+      payload: { gameType: 'wording', correct: true, score: score, timeTakenMs: Date.now() - _euphoriaStartTs }
+    });
+  }
+}
+
+// Notify native when ready
+setTimeout(function() { _euphoriaPostToNative({ type: 'READY' }); }, 500);
+</script>
+
+<script>
+"use strict"
+
+var game = {
+	storage: window.localStorage || {},
+	demoWords: "Swipe to make words",
+	storagePrefix: 'wording_',
+	appVersion: 22,
+	words: [],
+	rare: {'B':4,'C':4,'D':2,'F':4,'G':3,'H':3,'J':10,'K':5,'L':2,'M':4,'N':2,'P':4,'Q':10,'U':2,'V':5,'W':4,'X':8,'Y':3,'Z':10},
+	sideWays: ['U','L','UL','UR'],
+	ways: [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]],
+	boardSizeX: 4,
+	boardSizeY: 4,
+	playerColors: [
+		['0E0', 64],
+		['0DF', 130],
+		['FF0', 2],
+		['F80', 330],
+		['F9F', 250],
+		['A7F', 204],
+		['0FF', 130],
+		['E00', 300],
+		['AEA', 105],
+		['FFF', 0],
+	],
+	storageSet: function(key, val) {
+		game.storage[game.storagePrefix+key] = val
+	},
+	storageGet: function(key) {
+		return game.storage[game.storagePrefix+key] || ''
+	},
+	storageGetNum: function(key) {
+		return game.storageGet(key)*1 || 0
+	},
+	userClear: function() {
+		for(var key in game.storage) {
+			if(key.indexOf(game.storagePrefix)==0) {
+				gLog(key, game.storage[key])
+				delete game.storage[key]
+			}
+		}
+	},
+	playerColorGet: function(i, hue) {
+		i = i % game.playerColors.length
+		return game.playerColors[i][hue?1:0]
+	},
+	levelNumberInputChange: (gameId) => {
+		var bad = gameId<1 || gameId>74256 || gameId!=gameId*1
+		gPlayButton.innerText = 'Play Level '+(bad?'_':gameId)+' ▶'
+		gPlayButton.disabled = bad
+		if(!bad) {
+			game.levelNumberInputId = gameId*1
+			gLevelNumberInput.value = gameId
+		}
+	},
+	onLoad: function() {
+		
+		game.deviceGet()
+		gTutorialPlayDiv.innerHTML = (game.mobile?"Tap":"Click")+" to play"
+		
+		game.id=0
+		game.scoresString=''
+		game.profileName=''
+		game.profileAvatar=''
+		game.words = game.words1 = 'YAK,YARD,RAY,VAS,VARY,VASA,VASE,VARIES,DRAY,DRAB,DRIER,DRIERS,DRIES,KIR,KIRS,ARK,AIR,AIRS,ARIA,ARAB,ARSE,ARRAS,ARIAS,ARIES,AIRBASE,RIB,RAD,RASE,RARE,RABIES,AD,AS,ARAK,ARRAY,AARDVARK,FA,FAY,FAR,FIR,FIB,FIE,FAIR,FIRS,FRIAR,FRIES,FRIER,FAKIR,FAIRS,FARAD,FIBER,FIRRY,FRIARY,FRIARS,FRIERS,FAKIRS,FIBERS,FARRIER,FARRIERS,IF,ARE,ARES,SEA,SAD,SARI,SEAR,SERA,SABER,BE,BAA,BAR,BRIE,BIRD,BIAS,BIER,BARD,BARS,BAAS,BASE,BARE,BEAR,BRIAR,BRIES,BRIER,BIERS,BASER,BARES,BEARD,BEARS,BRIARS,BRIERS,ER,EAR,ERA,EARS,ERAS,RE,RES,REAR,REARS'.split(',')
+		game.boardString = game.boardString1 = 'YRVDKARAFIASRBER'
+		game.wordViewing=''
+		game.setup()
+		
+		var html = ''
+		var letters = 'SWIPDTOEZRKYMAVX'
+		for(var i=0; i<letters.length; i++) {
+			var letter = letters[i]
+			html += `
+				<div style='width:25%;height:25%;border-radius:1rem;padding:.2rem'>
+					<div id=gDemoTile${letter} class='tile' style='font-size:6rem;width:100%;height:100%;border-radius:1rem;cursor:auto'>
+						${letter}
+						<div class=tileGoodBg></div>
+					</div>
+				</div>
+			`
+		}
+		html += `<div id=gDemoArrows style='font-size:3rem'></div>`
+		gDemoDiv.innerHTML = html
+		
+		gDemoText.innerHTML = game.demoWords.split(' ').map((word, i) => `<span id=gDemoText${i}>${word}</span>`).join(' ')
+		
+		setTimeout(() => game.demoUpdate(0), 555)
+		
+		gSoundButton.onclick = () => {
+			game.mute(!game.storageGetNum('soundOff'))
+		}
+		
+		gBackButton.onclick = () => {
+			gAudio.play(game.soundGo)
+			if(game.state == 'viewing') {
+				game.stateGo('scores')
+			} else if(game.state == 'scores') {
+				game.stateGo('title')
+			} else if(game.state == 'over') {
+				game.stateGo('scores')
+			}
+		}
+		
+		gPlayButton.onclick = () => {
+			gAudio.play(game.soundGo)
+			game.playId = 0
+			var load = 0
+			if(game.levelNumberInputId == 1) {
+				game.words = game.words1
+				game.boardString = game.boardString1
+				game.levelScoreAverage = 0
+				if(game.storageGetNum("playedLevel1")) {
+					load = 1
+				}
+			} else {
+				load = 1
+			}
+			game.id = game.levelNumberInputId
+			if(load) {
+				game.stateGo('gameLoading')
+				game.adShowTry(() => {
+					game.playStartAjax(game.id, load)
+				})
+			} else {
+				game.playStartSecsElapsed = 0
+				game.start()
+				game.playStartAjax(game.id)
+			}
+			
+			game.storageSet('levelNumberPlayed', game.levelNumberInputId)
+			game.levelNumberInputChange(game.levelNumberInputId+1)
+		}
+		
+		gLevelNumberInput.oninput = function() {
+			game.levelNumberInputChange(gLevelNumberInput.value)
+		}
+		gLevelNumberInput.onkeydown = function(e) {
+			if(e.which == 13) {
+				gPlayButton.onclick()
+			}
+		}
+		
+		var f = (vals) => {
+			if(vals[0] == 'good') {
+				game.storageSet('userId', vals[1])
+				game.storageSet('userToken', vals[2])
+				game.storageSet('userName', vals[3])
+				
+				gDailyDiv.innerHTML = (vals[4]?vals[4]+"<br />":'')+"Word of the day is <i>"+vals[5]+"</i>.<br />It's in today's level!"
+				game.dailyId = vals[6]*1
+				game.dailyBoard = vals[7]
+				game.dailyWords = vals[8]
+				game.dailySecsLeft = vals[9]*1
+				
+				gTitlePlayDiv.style.display = 'block'
+				gTitleLoadingDiv.style.display = 'none'
+				
+				gPlayDailyButton.onclick = () => {
+					gAudio.play(game.soundGo)
+					game.id = game.dailyId
+					game.words = game.dailyWords.split('@')
+					game.boardString = game.dailyBoard
+					if(game.storageGetNum('dailyGameId') == game.dailyId) {
+						game.score = game.storageGetNum('dailyScore')
+						game.scoresGo(game.storageGet('dailyWords'))
+						//load latest average
+						game.playStartAjax(game.id)
+					} else {
+						game.playStartSecsElapsed = 0
+						game.stateGo('gameLoading')
+						game.adShowTry(() => {
+							game.start()
+							game.playStartAjax(game.id)
+						})
+					}
+				}
+				if(game.storageGetNum('dailyGameId') == game.dailyId) {
+					gPlayDailyButton.innerHTML = "Daily Challenge <span style='font-family:segoe ui emoji'>✔</span>"
+				}
+			} else {
+				game.storageSet('userId', '')
+				game.storageSet('userToken', '')
+			}
+		}
+		game.ajax("hello.php?new="+(game.storageGetNum('userId')?0:1), f)
+		
+		
+		setInterval(()=>game.tick(), 1000)
+		
+	},
+	adShowTry: function(callback) {
+		if(window.CrazyGames) {
+			const callbacks = {
+				adFinished: () => {
+					console.log("End midgame ad (callback)")
+					game.adState = ''
+					callback()
+				},
+				adError: (error, errorData) => {
+					console.log("Error midgame ad (callback)", error, errorData)
+					game.adState = ''
+					callback()
+				},
+				adStarted: () => {
+					console.log("Start midgame ad (callback)")
+					game.adState = 'showing'
+				}
+			}
+			game.adState = 'loading'
+			window.CrazyGames.SDK.ad.requestAd("midgame", callbacks)
+		} else {
+			callback()
+		}
+	},
+	scoresGo: function(wordsFound) {
+		game.boardSetup()
+		game.wordsSetup()
+		
+		gScoreDiv.innerHTML = game.score
+		
+		if(wordsFound) {
+			wordsFound = wordsFound.split('_')
+			for(var word of wordsFound) {
+				var wordObj = game.wordsInBoard[word]
+				if(wordObj) {
+					wordObj.did = true
+				} else {
+					debugger
+				}
+			}
+		}
+		
+		game.stateGo('scores')
+	},
+	playStartAjax: function(gameId, load) {
+		game.ajax("playStart.php?gameId="+gameId+(load?"&load=1":''), (vals) => {
+			if(vals[0] == 'good') {
+				game.playId = vals[1]*1
+				if(load) {
+					game.boardString = vals[3]
+					game.words = vals[4].split('@')
+				}
+				game.levelScoreBest = vals[5]*1
+				game.levelPlays = vals[6]*1
+				game.levelScoreTotal = vals[7]*1
+				game.levelScoreAverage = game.levelScoreTotal/game.levelPlays | 0
+				game.playStartSecsElapsed =  vals[2]*1
+				if(game.playId) {
+					if(gameId == game.dailyId) {
+						game.storageSet('dailyGameId', game.dailyId)
+						game.storageSet('dailyScore', 0)
+						game.storageSet('dailyWords', '')
+						game.storageSet('dailyWordUnique', '')
+						game.storageSet('dailyWordMissed', '')
+					}
+					if(load) {
+						game.start()
+					}
+				} else {
+					game.score = vals[8]*1
+					var words = vals[9]
+					game.levelWordUnique = vals[10]
+					game.levelWordMissed = vals[11]
+					// in case you cleared your cache and already played today. and somehow logged back in.
+					if(gameId == game.dailyId) {
+						game.storageSet('dailyGameId', game.dailyId)
+						game.storageSet('dailyScore', game.score)
+						game.storageSet('dailyWords', words)
+						game.storageSet('dailyWordUnique', game.levelWordUnique)
+						game.storageSet('dailyWordMissed', game.levelWordMissed)
+					}
+					game.scoresGo(words)
+				}
+			} else {
+				alert("Error: "+vals[1])
+				//game.stateGo('title')
+				window.location.reload()
+			}
+		})
+		if(gameId == 1) {
+			game.storageSet("playedLevel1", 1)
+		}
+	},
+	setup: function() {
+		game.tiles = []
+		game.mouseDown = false
+		game.totalSecondsStart = 99
+		game.timeBeforePause = 0
+		game.state = 'tutorial'
+		
+		game.board = []
+		
+		for(var x=0; x<game.boardSizeX; x++) {
+			game.board[x] = []
+			for(var y=0; y<game.boardSizeY; y++) {
+				game.board[x][y] = ''
+			}
+		}
+		
+		if(game.id) {
+			game.boardSetup()
+		}
+		
+		window.addEventListener("keydown", e => {
+			if(e.keyCode == 27) {
+				if(game.state == 'playing') {
+					game.pause()
+				} else if(game.state == 'paused') {
+					game.unPause()
+				} else if(game.state == 'scores' || game.state == 'viewing' || game.state == 'over') {
+					gBackButton.onclick()
+				}
+				return
+			}
+			if(game.state == 'playing') {
+				if(e.keyCode > 64 && e.keyCode < 91) {
+					game.tileClassesReset()
+
+					var letter = String.fromCharCode(e.keyCode)
+					var word = game.wordNowGet()
+					word += letter
+					gWordNowDiv.innerHTML = word
+					var nodes = game.wordFindAnywhere(word)
+					if(!nodes.length) {
+						game.released(null, word)
+					} else {
+						game.tiles = nodes
+						var tile0 = null
+						for(var tile of game.tiles) {
+							var tileDiv = document.getElementById('gTileDiv'+tile.x+'by'+tile.y)
+							tileDiv.classList.add('down')
+							if(tile0)
+								game.tileSideShow(tile0, tile.x, tile.y)
+							tile0 = tile
+						}
+					}
+				}
+				if(e.keyCode == 13) {
+					game.released()
+				}
+			}
+		})
+		
+		document.addEventListener("touchstart", e => {
+			var touch = e.changedTouches[0]
+			if(touch) {
+				game.clicked(touch.clientX, touch.clientY, e.target)
+			}
+			if(!gBlockTaps(e)) {
+				return true
+			}
+			e.preventDefault()
+			return false
+		}, {passive:false})
+		
+		document.addEventListener("touchcancel", e => {
+			game.released(e.target)
+			if(!gBlockTaps(e)) {
+				return true
+			}
+			e.preventDefault()
+			return false
+			
+		}, {passive:false})
+
+		document.addEventListener("touchend", e => {
+			game.released(e.target)
+			if(!gBlockTaps(e)) {
+				return true
+			}
+			e.preventDefault()
+			return false
+			
+		}, {passive:false})
+		
+		document.addEventListener("touchmove", e => {
+			var touch = e.changedTouches[0]
+			if(touch) {
+				game.dragged(touch.clientX, touch.clientY)
+			}
+			if(!gBlockTaps(e)) {
+				return true
+			}
+			e.preventDefault()
+			return false
+		}, {passive:false})
+		
+		window.addEventListener("mousedown", e => {
+			game.clicked(e.clientX, e.clientY, e.target)
+		}, {passive:false})
+		
+		window.addEventListener("mouseup", e => {
+			game.released(e.target)
+		}, {passive:false})
+		
+		window.addEventListener("mousemove", e => {
+			game.dragged(e.clientX, e.clientY)
+		}, {passive:false})
+		
+		window.onresize = _ => {
+			game.resize()
+			
+			// extra resize for mobile. especially on orientation change is needed. the event for orientationchange doesn't ever fire on ios.
+			setTimeout(_=>game.resize(true), 555)
+			setTimeout(_=>game.resize(true), 1555)
+		}
+		
+		window.onresize()
+		
+		game.wordsSetup()
+		
+		if(game.storageGetNum('tutorialSaw')==1) {
+			game.state = 'title'
+		}
+		game.stateGo(game.state)
+		
+		
+		game.mute(game.storageGetNum('soundOff'))
+		
+		game.levelNumberInputChange(game.storageGetNum('levelNumberPlayed')+1)
+		
+		setTimeout(_=> {
+			game.soundTickTock = gAudio.load("sound/tickTock.mp3")
+			game.soundWordGood = gAudio.load("sound/wordGood.mp3")
+			game.soundWordBad = gAudio.load("sound/wordBad.mp3")
+			gAudio.setVolume(game.soundWordBad,.6)
+			game.soundWordDid = gAudio.load("sound/wordDid.mp3")
+			game.soundGo = gAudio.load("sound/pauseNo.mp3")
+			game.soundBack = gAudio.load("sound/pause.mp3")
+			gAudio.setVolume(game.soundGo,.6)
+			gAudio.setVolume(game.soundBack,.6)
+		}, 111)
+		
+	},
+	logDb: function(kind, message) {
+		setTimeout(_=>
+			game.ajax('log.php?kind='+kind+'&message='+encodeURIComponent(message), r=>{
+			})
+		,222)
+	},
+	quit: function() {
+		gAudio.play(game.soundGo)
+		game.startTime = 1
+		game.gameOver()
+		game.stateGo('title')
+	},
+	stateGo: function(state) {
+		gLog("stateGo() from ", game.state, state)
+		var stateOld = game.state
+		if(state)game.state = state
+		
+		game.tiles = []
+		gWordNowDiv.innerHTML = ''
+		
+		if(state == 'gameLoading') {
+			gGameLoadingDiv.innerHTML = "⏳ Loading Game #"+game.id
+		}
+		
+		gPausedDiv.style.display = game.state == 'paused' ? 'flex' : 'none'
+		gGameOverDiv.style.display = game.state == 'over' ? 'flex' : 'none'
+		gGameDiv.style.display = gOr(game.state,'viewing','playing') ? 'block' : 'none'
+		gBackButton.style.display = game.state == 'viewing' || game.state == 'scores' || game.state == 'over' ? 'block' : 'none'
+		gPauseDiv.style.display = game.state == 'playing' ? 'block' : 'none'
+		gGameLoadingDiv.style.display = game.state == 'gameLoading' ? 'flex' : 'none'
+		gScoresPageDiv.style.display = game.state == 'scores' ? 'flex' : 'none'
+		gReportWordDiv.style.display = game.state == 'viewing' ? 'block' : 'none'
+		gSoundButton.style.display = gOr(game.state,'title','paused') ? 'block' : 'none'
+		gFooter.style.display = game.state != 'title' ? 'none' : 'block'
+		if(game.state != 'playing'){gWordLastDiv.innerHTML = gWordLastInfoDiv.innerHTML = ''}
+		
+		gTitleDiv.style.display = game.state == 'title' ? 'flex' : 'none'
+		gTutorialDiv.style.display = game.state == 'tutorial' ? 'flex' : 'none'
+		
+		if(game.state == 'over') {
+			var text = ''
+			var raresHtml = ''
+			if(game.scoreSaveLoading) {
+				text = "<i style='color:#999;font-size:4rem'>Loading...</i>"
+			} else {
+				if(game.levelScoreAverage > 0) {
+					var yay
+					if(game.score > game.levelScoreBest) {
+						text = "You set a new record on this level!<br />You beat the previous high score of 🏆"+game.levelScoreBest+"!"
+						yay = 1
+					} else {
+						if(game.score > game.levelScoreAverage) {
+							text += "You beat the average!"
+							yay = 1
+						}
+					}
+					if(yay && window.CrazyGames) {
+						window.CrazyGames.SDK.game.happytime()
+					}
+				} else {
+					text = "You're the first person to play this level!"
+				}
+				if(text) {
+					text = `
+						<div style='margin-top:1rem;font-size:70%'>
+							${text}
+						</div>
+					`
+				}
+				text += `
+					<div style='display:flex;align-items:center'>
+						<div style='flex-grow:1;padding-right:2rem'>
+							Average Score:
+						</div>
+						<div style='white-space:nowrap'>
+							🏆${game.levelScoreAverage}
+						</div>
+					</div>
+				`
+				
+				
+				if(game.levelWordUnique) {
+					var points = game.wordPointsGet(game.levelWordUnique)
+					raresHtml += `
+						<div style='display:flex;align-items:center;margin-bottom:4rem'>
+							<div style='flex-grow:1;padding-right:2rem'>
+								Your Rarest Find:
+							</div>
+							<div style='white-space:nowrap'>
+								<i>${game.levelWordUnique}</i> <span style='font-size:60%;position:relative;top:-.5rem'>🏆${points}</span>
+							</div>
+						</div>
+					`
+				}
+				if(game.levelWordMissed) {
+					var points = game.wordPointsGet(game.levelWordMissed)
+					raresHtml += `
+						<div style='display:flex;align-items:center;margin-bottom:4rem'>
+							<div style='flex-grow:1;padding-right:2rem'>
+								Most Commonly Found Word You Missed:
+							</div>
+							<div style='white-space:nowrap'>
+								<i>${game.levelWordMissed}</i> <span style='font-size:60%;position:relative;top:-.5rem'>🏆${points}</span>
+							</div>
+						</div>
+					`
+				}
+			}
+			
+			gGameOverDiv.innerHTML = `
+				<div style='margin:1rem auto 4rem;font-size:12rem'>
+					Time&apos;s up!
+				</div>
+				<div style='margin-bottom:1rem;font-size:5.5rem;text-align:left;height:76rem;width:100%'>
+					<div style='display:flex;align-items:center;margin-bottom:4rem;font-size:130%'>
+						<div style='flex-grow:1;padding-right:2rem'>
+							Your Score:
+						</div>
+						<div style='white-space:nowrap'>
+							🏆${game.score}
+						</div>
+					</div>
+					${text}
+					<div style='display:flex;align-items:center;margin-bottom:4rem;margin-top:4rem'>
+						<div style='flex-grow:1;padding-right:2rem'>
+							Your Best Word:
+						</div>
+						<div style='white-space:nowrap'>
+							<i>${game.bestWord}</i> <span style='font-size:60%;position:relative;top:-.5rem'>🏆${game.bestWordPoints}</span>
+						</div>
+					</div>
+					${raresHtml}
+				</div>
+				<button class=button onclick="gAudio.play(game.soundGo);game.stateGo('scores')" style='font-size:7rem;padding:3rem 5rem;margin-bottom:19rem'>
+					Okay
+				</button>
+			`
+		}
+		if(game.state == 'scores') {
+			if(stateOld != 'viewing') {
+				game.wordsInBoardSorted.sort((a,b) => {
+					var diff = b.points-a.points
+					if(diff)return diff
+					return a.name > b.name ? 1:-1
+				})
+				game.wordsInBoardDraw()
+				gScoresPageTitle.innerHTML = `Level ${game.id} Results`
+			}
+		}
+		
+	},
+	wordFindAnywhere: function(word) {
+		for(var x=0; x<game.boardSizeX; x++) {
+			for(var y=0; y<game.boardSizeY; y++) {
+				if(game.board[x][y] == word[0]) {
+					var nodes = game.wordFind(x,y,word)
+					if(nodes.length) {
+						return nodes
+					}
+				}
+			}
+		}
+		return []
+	},
+	wordFind: function(x0,y0,word) {
+		
+		if(word.length < 2) {
+			return game.board[x0][y0] == word ? [{x:x0, y:y0}] : []
+		}
+		
+		var words = []
+		
+		var node = {
+			x: x0,
+			y: y0,
+			did: [],
+			letterI: 0,
+		}
+		node.did[y0*game.boardSizeX+x0] = true
+		
+		var nodes = [node]
+		
+		var nodeI = 0
+		while(1) {
+			var node = nodes[nodeI]
+			if(!node)break
+			for(var addY=-1;addY<=1;addY++) {
+				for(var addX=-1;addX<=1;addX++) {
+					if(addX==0 && addY==0)continue
+					var x2 = node.x+addX
+					var y2 = node.y+addY
+					if(game.inBoard(x2,y2)) {
+						if(game.board[x2][y2] == word[node.letterI+1]) {
+							if(!node.did[y2*game.boardSizeX+x2]) {
+								var node2 = {
+									x: x2,
+									y: y2,
+									did: node.did.slice(0),
+									letterI: node.letterI+1,
+									parent: node,
+								}
+								
+								if(node.letterI == word.length-2) {
+									var list = []
+									while(node2) {
+										list.unshift({x:node2.x, y:node2.y})
+										node2=node2.parent
+									}
+									return list
+								}
+								
+								node2.did[y2*game.boardSizeX+x2] = true
+								nodes.push(node2)
+							}
+						}
+					}
+				}
+			}
+			nodeI++
+		}
+		return []
+	},
+	inBoard: function(x,y) {
+		return x>=0 && y>=0 && x<game.boardSizeX && y<game.boardSizeY
+	},
+	start: function() {
+		
+		game.boardSetup()
+		game.wordsSetup()
+		game.startReally()
+		
+	},
+	startReally: function() {
+		game.totalSeconds = game.totalSecondsStart
+		gScoreDiv.innerHTML = game.score = 0
+		game.bestWord = ''
+		game.bestWordPoints = 0
+		game.stateGo('playing')
+		
+		game.wordViewingTiles = []
+		gWordViewingWordDiv.innerHTML = ''
+		gWordViewingDefDiv.innerHTML = ''
+		
+		game.startTime = Date.now() - game.playStartSecsElapsed*1000
+		game.resize()
+		setTimeout(_=>game.resize(true),1111)
+		game.played = 1
+		
+		if(window.CrazyGames)window.CrazyGames.SDK.game.gameplayStart()
+	},
+	tick: function() {
+		if(game.state == 'playing' || game.state == 'paused') {
+			game.timeDraw()
+			if(game.state == 'playing') {
+				if(!game.tiles.length) {
+					game.gameOverCheck()
+				}
+				var seconds = Math.floor(game.secondsRemainingGet())
+				if(seconds == 8 && !gAudio.isPlaying(game.soundTickTock)) {
+					gAudio.play(game.soundTickTock)
+				}
+			}
+		}
+		
+		if(game.dailySecsLeft > 0) {
+			game.dailySecsLeft--
+			if(game.dailySecsLeft == 0) {
+				gDailyNextDiv.innerHTML = "Reload for the next challenge."
+			} else if(game.state == 'title') {
+				var hours = game.dailySecsLeft/60/60 |0
+				var mins = game.dailySecsLeft/60 -hours*60 |0
+				var secs = game.dailySecsLeft %60 |0
+				gDailyNextDiv.innerHTML = "Next challenge in "+hours+" hours "+mins+" minutes "+secs+" seconds."
+			}
+		}
+	},
+	gameOverCheck: function() {
+		if(game.secondsRemainingGet() <= 0) {
+			game.gameOver()
+		}
+	},
+	wordsInBoardDraw: function() {
+		var html = ''
+		var i=0,dids=0
+		for(var wordObj of game.wordsInBoardSorted) {
+			i++
+			var icons = '', did=wordObj.did
+			if(wordObj.did) {
+				dids++
+				icons += `<span class=emoji style='font-weight:normal;text-shadow:0 0 0.5rem white'>🏆</span>`
+				if(game.levelWordUnique && game.levelWordUnique == wordObj.name) {
+					icons += `<span style='font-size:50%'>Rare Find!</span>`
+				}
+			} else {
+				if(game.levelWordMissed && game.levelWordMissed == wordObj.name) {
+					icons += `<span style='font-size:50%;color:inherit'>&larr; Commonly Found</span>`
+				}
+			}
+			html += `
+				<div style='padding:0 1rem`+(i&1 ? `;background:rgba(0,0,0,.1)`:``)+(did?``:`;color:#CCC`)+`'>
+					<span class=score style='font-size:80%'>${wordObj.points}</span> 
+					<button class=word onclick='return game.boardViewGo(this.innerText)'>${wordObj.name}</button>
+					${icons}
+				</div>
+			`
+		}
+		
+		html += `
+			<div style='display:flex;align-items:center;justify-content:center;font-size:3rem'>
+				<div id=gWordSuggestText style='white-space:nowrap'>
+					Did you find a word not in our dictionary?
+				</div>
+				<button onclick='game.wordSuggest()' class='button' style='margin:2rem;font-size:3rem;padding:2rem'>
+					Add Word
+				</button>
+			</div>
+		`
+		
+		gWordsDiv.innerHTML = html
+		
+		var average = '&nbsp;'
+		if(game.levelScoreAverage) {
+			average = "Average Score: 🏆"+game.levelScoreAverage
+		}
+		gScoresDiv.innerHTML = "You found "+dids+" of "+i+" words for 🏆"+game.score+"<br />"+average
+	},
+	wordSuggestLast: function() {
+		gWordLastDiv.innerHTML ='✅ '+game.lastWord+' suggested.'
+		gWordLastInfoDiv.innerHTML = ''
+		game.ajax('wordSuggest.php?gameId='+game.id+'&word='+game.lastWord, r=>{
+		})
+	},
+	wordSuggest: function() {
+		var s = prompt("What's the word?")
+		if(!s) {
+			game.logDb("suggestCancel", "")
+		} else {
+			if(/[^a-z0-9\']/i.test(s)) {
+				alert("Words must be only letters A-Z.")
+			} else {
+				gWordSuggestText.innerHTML ='✅ Suggested <i>'+s+'</i>, thanks!'
+				game.ajax('wordSuggest.php?gameId='+game.id+'&word='+s, r=>{
+					var parts = r.split(',')
+					if(parts[0] == 'good') {
+					} else {
+						if(r == "already") {
+							gWordSuggestText.innerHTML ='We already have <i>'+s+'</i>'
+						} else {
+							gWordSuggestText.innerHTML ='Error: '+r
+						}
+					}
+				}, (e) => {
+					gWordSuggestText.innerHTML = 'Error'
+				})
+			}
+		}
+	},
+	boardViewGo: function(wordString) {
+		window.event && window.event.preventDefault()
+		
+		game.wordViewing = ''
+		if(wordString) {
+			gAudio.play(game.soundGo)
+			
+			game.wordViewing = wordString
+			
+			var word = game.wordsInBoard[game.wordViewing]
+			if(!word) {
+				debugger
+			} else {
+				game.wordViewingTiles = game.wordFindAnywhere(word.name)
+				gWordViewingWordDiv.innerHTML = word.name
+				gReportWordSpan.innerHTML = word.name
+				gWordViewingDefDiv.innerHTML = `<span style='color:#999'>loading...</span>`
+				game.ajax('defGet.php?word='+word.name, vals=>{
+					if(vals[0] == 'good' && vals[1]) {
+						gWordViewingDefDiv.innerHTML = vals[1]
+					} else {
+						gWordViewingDefDiv.innerHTML = "No definitions."
+					}
+				})
+			}
+		}
+		game.stateGo('viewing')
+		
+		game.resize()
+		return false
+	},
+	wordReport: function(button, reasonI) {
+		gReportWordModal.style.display = 'none'
+		gReportWordDiv.innerHTML = "✅ Reported <i>"+game.wordViewing+"</i> as "+button.innerText
+		
+		game.ajax('wordReport.php?gameId='+game.id+'&word='+game.wordViewing+'&reason='+reasonI, r=>{
+		})
+	},
+	share: function(button) {
+		var tiles = []
+		for(var word of game.wordsInBoardSorted) {
+			if(word.did) {
+				tiles = game.wordFindAnywhere(word.name)
+				break
+			}
+		}
+		var text = ''
+		for(var y=0; y<game.boardSizeY; y++) {
+			for(var x=0; x<game.boardSizeX; x++) {
+				var c = '🟪'
+				for(var i=0; i<tiles.length; i++) {
+					var tile = tiles[i]
+					if(tile.x==x && tile.y==y) {
+						var next = tiles[i+1]
+						if(!next) {
+							c = '✅'
+						} else {
+							var distX = next.x - tile.x
+							var distY = next.y - tile.y
+							if(distX > 0) {
+								if(distY > 0) {
+									c = '↘'
+								} else if(distY < 0) {
+									c = '↗'
+								} else {
+									c = '➡'
+								}
+							} else if(distX < 0) {
+								if(distY > 0) {
+									c = '↙'
+								} else if(distY < 0) {
+									c = '↖'
+								} else {
+									c = '⬅'
+								}
+							} else {
+								if(distY > 0) {
+									c = '⬇'
+								} else {
+									c = '⬆'
+								}
+							}
+						}
+						break
+					}
+				}
+				text += c
+			}
+			text += '\n'
+		}
+		
+		var level = game.id==game.dailyId ? "today":"on level "+game.id
+		text = "Best Wording I found "+level+":\n"+text+"Final Score: 🏆"+game.score
+		if(game.levelWordUnique) {
+			//text += "\nRare Find: "+game.levelWordUnique
+		}
+		
+		navigator.clipboard.writeText(text).then(() => {
+			button.innerHTML = '✅ Copied!'
+			setTimeout(() => button.innerHTML = "🏆 Share Score",888)
+		}, () => {
+			console.error('Failed to copy')
+		})
+		
+	},
+	gameOver: function() {
+		
+		if(window.CrazyGames)window.CrazyGames.SDK.game.gameplayStop()
+		
+		if(game.score < 1) {
+			game.stateGo('title')
+			return
+		}
+		
+		game.levelWordUnique = ''
+		game.levelWordMissed = ''
+		game.scoreSaveLoading = 1
+		game.levelScoreAverage = 0
+		game.levelScoreBest = 0
+		game.levelScoreTotal = 0
+		game.levelPlays = 0
+		
+		game.stateGo('over')
+		
+		var words=''
+		for(var name in game.wordsInBoard) {
+			var word = game.wordsInBoard[name]
+			if(word.did) {
+				words+='_'+name
+			}
+		}
+		words = words.substr(1)
+		
+		if(game.id == game.dailyId) {
+			game.storageSet('dailyGameId', game.dailyId)
+			game.storageSet('dailyScore', game.score)
+			game.storageSet('dailyWords', words)
+			game.storageSet('dailyWordUnique', '')
+			game.storageSet('dailyWordMissed', '')
+		}
+		
+		game.ajax('scoreSave.php?gameId='+game.id+'&score='+game.score+'&playId='+game.playId+'&words='+words, (vals) => {
+			game.scoreSaveLoading = 0
+			if(vals[0] == 'good') {
+				if(vals[1]*1) {
+					game.score = vals[1]*1
+				}
+				game.levelScoreBest = vals[2]*1
+				game.levelPlays = vals[3]*1
+				game.levelScoreTotal = vals[4]*1
+				game.levelScoreAverage = game.levelScoreTotal/game.levelPlays | 0
+				game.levelWordUnique = vals[5]
+				game.levelWordMissed = vals[6]
+				if(game.id == game.dailyId && game.id == game.storageGetNum('dailyGameId')) {
+					game.storageSet('dailyScore', game.score)
+					game.storageSet('dailyWords', words)
+					game.storageSet('dailyWordUnique', game.levelWordUnique)
+					game.storageSet('dailyWordMissed', game.levelWordMissed)
+				}
+				if(game.state == 'over')game.stateGo('over')
+			} else {
+				alert("Error: "+vals[1])
+				game.stateGo('title')
+			}
+		})
+	},
+	pause: function() {
+		gLog("pause()")
+		game.released()
+		game.stateGo('paused')
+		game.timeBeforePause = Date.now()-game.startTime
+		gAudio.stop(game.soundTickTock)
+		gAudio.play(game.soundBack)
+		game.tileClassesReset()
+	},
+	unPause: function() {
+		gLog("unPause()")
+		game.stateGo('playing')
+		game.startTime = Date.now()-game.timeBeforePause
+		game.timeDraw()
+		gAudio.play(game.soundGo)
+	},
+	secondsRemainingGet: function() {
+		return game.totalSeconds - (Date.now()-game.startTime)/1000
+	},
+	timeDraw: function() {
+		var seconds = Math.floor(game.secondsRemainingGet())
+		gTimeDiv.innerHTML = seconds>0 ? seconds : 0
+	},
+	resize: function(isExtra) {
+		document.documentElement.style.fontSize = innerWidth / page.clientHeight < .75 ? '1vw': page.clientHeight/100*.74+'px'
+		
+		game.sizeX = game.sizeY = gBoardDiv.clientWidth
+		
+		game.tileSizeX = game.sizeX / game.boardSizeX
+		game.tileSizeY = game.sizeY / game.boardSizeY
+		game.letterSizeX = game.sizeX / game.boardSizeX * .7 * 9/13
+		game.letterSizeY = game.sizeY / game.boardSizeY * .7
+		
+		var bounds = gBoardDiv.getBoundingClientRect()
+		game.boardX = bounds.left
+		game.boardY = bounds.top
+		
+		if(!isExtra) {
+			game.render()
+			
+			if(!game.sizeX) {
+				setTimeout(() => game.resize(true), 99)
+			}
+		}
+	},
+	wordNowGet: function() {
+		var word = ''
+		for(var tile of game.tiles) {
+			word += game.board[tile.x][tile.y]
+		}
+		return word
+	},
+	wordPointsGet: function(word) {
+		var len = word.length
+		var score = 0
+		for(var i=0; i<len; i++) {
+			score += game.rare[word[i]]||1
+		}
+		return score
+	},
+	released: function(div, word) {
+		
+		game.clickNo()
+		if(game.state == 'playing') {
+			if(!word)
+				word = game.wordNowGet()
+			var score = 0
+			if(word.length > 1) {
+				var wordObj = game.wordsInBoard[word]
+				if(wordObj) {
+					if(!wordObj.did) {
+						wordObj.did = true
+						
+						score = wordObj.points
+						
+						game.score += score
+						gScoreDiv.innerHTML = game.score
+						if(word.length > 3) {
+							if(Math.floor(game.secondsRemainingGet()) > 0) {
+								var add = word.length-3
+								game.totalSeconds += add
+								gTimeAddDiv.innerHTML = "+"+add
+								gTimeAddDiv.classList.add('fadeOutUp')
+								gTimeDiv.parentNode.classList.add('goGreenEmoji')
+								setTimeout(_=>{
+									gTimeDiv.parentNode.classList.remove('goGreenEmoji')
+									gTimeAddDiv.innerHTML = ""
+									gTimeAddDiv.classList.remove('fadeOutUp')
+								},400)
+							}
+						}
+						
+						if(score > game.bestWordPoints) {
+							game.bestWord = word
+							game.bestWordPoints = score
+						}
+						
+						gAudio.setVolume(game.soundWordGood, .5+Math.min(word.length,10)/10*.5)
+						gAudio.play(game.soundWordGood)
+						gWordNowDiv.classList.add('goodWord')
+						gScoreRowDiv.classList.add('scoreAdd')
+						setTimeout(_=>{
+							if(gWordNowDiv.classList.contains('goodWord')) {
+								gWordNowDiv.classList.remove('goodWord')
+								gWordNowDiv.innerHTML = ''
+								setTimeout(_=>{
+									if(gScoreRowDiv.classList.contains('scoreAdd')) {
+										gScoreRowDiv.classList.remove('scoreAdd')
+									}
+								}, 200)
+							}
+						}, 300)
+					}
+				}
+				
+				gWordLastDiv.innerHTML = word
+				if(!wordObj) {
+					gWordLastInfoDiv.innerHTML = `
+						Not Found. Should it be in the dictionary?
+						<button onclick='game.wordSuggestLast()' class='button' style='margin-left:1rem;font-size:2rem;padding:1rem'>
+							Add Word
+						</button>
+					`
+				} else {
+					gWordLastInfoDiv.innerHTML = score ? `🏆${score}!`: 'Already Found'
+				}
+				game.lastWord = word
+			}
+			
+			if(!score) {
+				if(wordObj) {
+					gAudio.play(game.soundWordDid)
+					gWordNowDiv.classList.add('didWord')
+					setTimeout(_=>{
+						if(gWordNowDiv.classList.contains('didWord')) {
+							gWordNowDiv.classList.remove('didWord')
+							gWordNowDiv.innerHTML = ''
+						}
+					}, 300)
+				} else {
+					if(word.length) {
+						gAudio.play(game.soundWordBad)
+						gWordNowDiv.classList.add('badWord')
+					}
+					setTimeout(_=>{
+						if(gWordNowDiv.classList.contains('badWord')) {
+							gWordNowDiv.classList.remove('badWord')
+							gWordNowDiv.innerHTML = ''
+						}
+					}, 300)
+				}
+			}
+			
+			var time=0
+			for(var tile of game.tiles) {
+				setTimeout(function(tile) {
+					var boardX = tile.x
+					var boardY = tile.y
+					var tileDiv = document.getElementById('gTileDiv'+boardX+'by'+boardY)
+					tileDiv.classList.remove('down')
+					tileDiv.classList.add(score ? 'good': (wordObj?'did':'bad'))
+					game.tileSideHide(boardX, boardY)
+				}.bind(game,tile), time)
+				time+=score ? 6:3
+			}
+			game.tiles = []
+			game.gameOverCheck()
+		} else if(game.state == 'tutorial') {
+			game.stateGo('title')
+			game.storageSet('tutorialSaw', 1)
+		}
+		game.mouseDown = false
+	},
+	clickNo: function() {
+		if(game.downDiv) {
+			if(game.downDiv.className=='word') {
+				game.downDiv.style.color='inherit'
+			}
+			game.downDiv = null
+		}
+	},
+	dragged: function(x,y) {
+		if(game.mouseDown) {
+			game.clickNo()
+			game.clicked(x,y)
+		}
+	},
+	clicked: function(x,y,div) {
+		game.downDiv = div
+		if(div && div.className=='word') {
+			div.style.color='#1F1'
+		}
+		game.mouseDown = true
+		
+		if(game.state != 'playing')return
+		x -= game.boardX
+		y -= game.boardY
+		if(x<0 || y<0)return
+		
+		if(game.tiles.length) {
+			var margin = .05
+			var modX = x/game.tileSizeX%1-.5
+			var modY = y/game.tileSizeY%1-.5
+			if(Math.sqrt(modX*modX + modY*modY) > .45 ) {
+				return
+			}
+		}
+		
+		var boardX = x/game.tileSizeX|0
+		var boardY = y/game.tileSizeY|0
+		
+		if(game.inBoard(boardX,boardY)) {
+			for(var tile of game.tiles) {
+				if(tile.x == boardX && tile.y == boardY) {
+					if(tile == game.tiles[game.tiles.length-2]) {
+						tile = game.tiles[game.tiles.length-1]
+						boardX = tile.x
+						boardY = tile.y
+						var tileDiv = document.getElementById('gTileDiv'+boardX+'by'+boardY)
+						tileDiv.classList.remove('down')
+						
+						for(var tile of game.tiles) {
+							game.tileSideHide(tile.x, tile.y)
+						}
+						
+						game.tiles.pop()
+						
+						var tile0
+						for(var tile of game.tiles) {
+							if(tile0)
+								game.tileSideShow(tile0, tile.x, tile.y)
+							tile0 = tile
+						}
+						
+						var word = game.wordNowGet()
+						gWordNowDiv.innerHTML = word
+					}
+					return
+				}
+			}
+			if(tile) {
+				if(Math.abs(tile.x-boardX) > 1 || Math.abs(tile.y-boardY) > 1) {
+					return
+				}
+				game.tileSideShow(tile, boardX, boardY)
+			}
+			
+			game.tiles.push({x:boardX,y:boardY})
+			
+			//game.board[boardX][boardY] = 'X'
+			var tileDiv = document.getElementById('gTileDiv'+boardX+'by'+boardY)
+			tileDiv.classList.remove('bad')
+			tileDiv.classList.remove('did')
+			tileDiv.classList.remove('good')
+			tileDiv.classList.add('down')
+			
+			var word = game.wordNowGet()
+			gWordNowDiv.classList.remove('goodWord')
+			gScoreDiv.classList.remove('scoreAdd')
+			gWordNowDiv.innerHTML = word
+		}
+	},
+	tileSideHide: function(boardX, boardY) {
+		for(var way of game.sideWays) {
+			document.getElementById('gTile'+way+'Div'+boardX+'by'+boardY).style.display = 'none'
+		}
+	},
+	tileSideShow: function(tile, boardX, boardY) {
+		var distX = boardX - tile.x
+		var distY = boardY - tile.y
+		if(distX == 1 && distY == 0) {
+			var div = document.getElementById('gTileLDiv'+boardX+'by'+boardY)
+			div.style.display = 'block'
+			div.style.transform = 'translate(-80%,-50%) scaleX(-1)'
+		}
+		if(distX == 0 && distY == 1) {
+			var div = document.getElementById('gTileUDiv'+boardX+'by'+boardY)
+			div.style.display = 'block'
+			div.style.transform = 'translate(-50%,-10%) scaleY(-1)'
+		}
+		if(distX == 1 && distY == 1) {
+			var div = document.getElementById('gTileULDiv'+boardX+'by'+boardY)
+			div.style.display = 'block'
+			div.style.transform = 'translate(-50%,-50%) rotate(135deg)'
+		}
+		if(distX == -1 && distY == -1) {
+			var div = document.getElementById('gTileULDiv'+tile.x+'by'+tile.y)
+			div.style.display = 'block'
+			div.style.transform = 'translate(-50%,-50%) rotate(-45deg)'
+		}
+		if(distX == -1 && distY == 0) {
+			var div = document.getElementById('gTileLDiv'+tile.x+'by'+tile.y)
+			div.style.display = 'block'
+			div.style.transform = 'translate(-50%,-50%)'
+		}
+		if(distX == 0 && distY == -1) {
+			var div = document.getElementById('gTileUDiv'+tile.x+'by'+tile.y)
+			div.style.display = 'block'
+			div.style.transform = 'translate(-50%,-50%)'
+		}
+		if(distX == 1 && distY == -1) {
+			var div = document.getElementById('gTileURDiv'+tile.x+'by'+tile.y)
+			div.style.display = 'block'
+			div.style.transform = 'translate(-50%,-50%) rotate(45deg)'
+		}
+		if(distX == -1 && distY == 1) {
+			var div = document.getElementById('gTileURDiv'+boardX+'by'+boardY)
+			div.style.display = 'block'
+			div.style.transform = 'translate(-50%,-50%) rotate(225deg)'
+		}
+	},
+	tileClassesReset: function() {
+		for(var x=0; x<game.boardSizeX; x++) {
+			for(var y=0; y<game.boardSizeY; y++) {
+				var tileDiv = document.getElementById('gTileDiv'+x+'by'+y)
+				tileDiv.classList.remove('bad')
+				tileDiv.classList.remove('did')
+				tileDiv.classList.remove('good')
+				tileDiv.classList.remove('down')
+			}
+		}
+	},
+	render: function() {
+		var html = ''
+		if(1) {
+			for(var y=0; y<game.boardSizeY; y++) {
+				for(var x=0; x<game.boardSizeX; x++) {
+					var letter = game.board[x][y]
+					html += `
+						<div style='width:25%;height:${game.tileSizeY|0}px;padding:1.5rem;position:relative;font-size:9rem'>
+							<div id=gTileULDiv${x}by${y} style='display:none;color:#CFF;position:absolute;width:3rem;height:9rem;left:0;top:0;transform:translate(-50%,-50%) rotate(-45deg)'>↑</div>
+							<div id=gTileURDiv${x}by${y} style='display:none;color:#CFF;position:absolute;width:3rem;height:9rem;left:100%;top:0;transform:translate(-50%,-50%) rotate(45deg);line-height:1'>↑</div>
+							<div id=gTileUDiv${x}by${y} style='display:none;color:#CFF;position:absolute;width:4rem;height:5rem;left:50%;top:-1rem;transform:translate(-50%,-50%)'>↑</div>
+							<div id=gTileLDiv${x}by${y} style='display:none;color:#CFF;position:absolute;width:5rem;height:4rem;top:50%;left:.5rem;line-height:.5'>←</div>
+							<div class=tile id=gTileDiv${x}by${y}>
+								<div class=tileGoodBg>
+								</div>
+								<div class=tileBg>
+									${letter}
+									<div style='position:absolute;font-size:3rem;right:2rem;top:1rem;color:#666'>${game.rare[letter]||1}</div>
+								</div>
+							</div>
+						</div>
+					`
+				}
+			}
+			gBoardDiv.innerHTML = html
+		}
+		
+		if(game.wordViewingTiles) {
+			game.wordViewingRender()
+			setTimeout(_=>game.wordViewingRender(),40)
+		}
+	},
+	wordViewingRender: function() {
+		if(game.wordViewingTiles) {
+			var tile0 = null
+			for(var tile of game.wordViewingTiles) {
+				var tileDiv = document.getElementById('gTileDiv'+tile.x+'by'+tile.y)
+				tileDiv.classList.add('down')
+				if(tile0)
+					game.tileSideShow(tile0, tile.x, tile.y)
+				tile0 = tile
+			}
+		}
+	},
+	deviceGet: function() {
+		if(!game.device) {
+			var s = navigator.userAgent
+			if(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(s)) {
+				game.mobile = true
+				s = s.toLowerCase()
+				game.device = "ios"
+				if(s.indexOf('android') >= 0)
+					game.device = "android"
+			} else {
+				game.device = "windows"
+				if(navigator.platform.substr(0,3) == 'Mac')
+					game.device = "mac"
+			}
+		}
+		return game.device
+	},
+	boardSetup: function() {
+		var x=0,y=0
+		game.board = []
+		for(var i=0; i<game.boardString.length; i++) {
+			if(!game.board[x])
+				game.board[x] = []
+			game.board[x][y] = game.boardString[i]
+			x++
+			if(x>=game.boardSizeX) {
+				x=0
+				y++
+			}
+		}
+	},
+	wordsSetup: function() {
+		game.wordsInBoardSorted = []
+		game.wordsInBoard = {}
+		for(var name of game.words) {
+			var word = {name}
+			word.points = game.wordPointsGet(name)
+			game.wordsInBoard[name] = word
+			game.wordsInBoardSorted.push(word)
+		}
+	},
+	mute: function(turnOff) {
+		game.storageSet('soundOff', turnOff?1:0)
+		if(!turnOff) {
+			gAudio.unMute()
+			gAudio.play(game.soundGo)
+		} else {
+			gAudio.mute()
+		}
+		gSoundButton.innerHTML = turnOff ? "<div style='opacity:.5'>🔈</div>":'🔊'
+	},
+	demoUpdate: function(i) {
+		var letter = game.demoWords[i]
+		if(letter == ' ' || !letter) {
+			var wordI = game.demoWords.substr(0,i).split(' ').length-1
+			document.getElementById('gDemoText'+wordI).style.color = '#0FD'
+			var letterI = i
+			while(letterI>0) {
+				letterI--
+				if(game.demoWords[letterI] == ' ')break
+			}
+			for(; letterI<i; letterI++) {
+				var letter2 = game.demoWords[letterI]
+				var tile = document.getElementById('gDemoTile'+letter2.toUpperCase())
+				if(tile) {
+					tile.classList.remove('down')
+					tile.classList.add('goodDemo')
+					!function(tile){setTimeout(()=>tile.classList.remove('goodDemo'),500)}(tile)
+				}
+				gDemoArrows.innerHTML = ''
+			}
+		} else {
+			var tile = document.getElementById('gDemoTile'+letter.toUpperCase())
+			tile.classList.add('down')
+			var letter0 = game.demoWords[i-1]
+			if(letter0 && letter0!=' ') {
+				var tile0 = document.getElementById('gDemoTile'+letter0.toUpperCase())
+				var rect = tile.getBoundingClientRect()
+				var rect0 = tile0.getBoundingClientRect()
+				var a = Math.atan2(rect.y-rect0.y, rect.x-rect0.x)
+				var x = rect0.x + rect.width/2 + Math.sign(rect.x-rect0.x)*rect.width/2 | 0
+				var y = rect0.y + rect.height/2 + Math.sign(rect.y-rect0.y)*rect.height/2 | 0
+				a = a/Math.PI*180+90|0
+				gDemoArrows.innerHTML += `<div style='position:fixed;z-index:1;top:${y}px;left:${x}px;color:#0FD;font-size:4rem;transform:translate(-50%, -50%) rotate(${a}deg)'>↑</div>`
+			}
+		}
+		
+		if(i < game.demoWords.length) {
+			setTimeout(() => game.demoUpdate(i+1), 111 + (letter==' '?500:0))
+		}
+	},
+	ajax: function(url, f, onError) {
+		url = gSiteUrl+'/'+url
+			+ "&v="+game.appVersion
+			+ "&platform="+gPlatform
+			+ "&userId="+game.storageGet('userId')
+			+ "&userToken="+game.storageGet('userToken')
+			+ "&refer="+encodeURIComponent(document.referrer)
+			
+		gLog('ajax', url)
+		fetch(url).then(r=>r.text()).then(r=>f(r.split(','))).catch((e)=>onError && onError(e))
+	}
+}
+
+function gBlockTaps(e) {
+	var div = e.target
+	while(1) {
+		if(!div || !div.classList)
+			return true
+		if(gOr(div.tagName,'INPUT','BUTTON','A') || div.classList.contains('scroll'))
+			return false
+		div = div.parentNode
+	}
+}
+
+function gOr(val,a,b,c,d) {
+	return val==a || val==b || (c!==undefined && val==c) || (d!==undefined && val==d)
+}
+
+
+window.onload = () => {
+	game.onLoad()
+}
+
+</script>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// AUTO-START: Override onLoad to skip menu and start directly
+// ═══════════════════════════════════════════════════════════
+(function() {
+  var origOnLoad = game.onLoad;
+  
+  game.onLoad = function() {
+    game.deviceGet();
+    gTutorialPlayDiv.innerHTML = '';
+    game.id = 0;
+    game.scoresString = '';
+    game.profileName = '';
+    game.profileAvatar = '';
+    
+    // Board/words from server config (resolved from DB level) or fallback to embedded
+    if (_euphoriaBoard && _euphoriaWords && _euphoriaWords.length) {
+      game.boardString = _euphoriaBoard;
+      game.words = _euphoriaWords;
+      game.id = 1;
+    } else {
+      var levelIdx = Math.floor(Math.random() * LEVELS.length);
+      var level = LEVELS[levelIdx];
+      game.boardString = level.board;
+      game.words = level.words;
+      game.id = level.id;
+    }
+    game.wordViewing = '';
+    
+    game.setup();
+    
+    // Skip tutorial and title, go straight to playing
+    game.storageSet('tutorialSaw', 1);
+    game.state = 'title';
+    
+    setInterval(function() { game.tick(); }, 1000);
+    
+    // Sync game timer to Euphoria round duration
+    game.totalSecondsStart = Math.floor(_euphoriaTimeLimitMs / 1000);
+
+    // Auto-start the game
+    game.playStartSecsElapsed = 0;
+    game.levelScoreAverage = 0;
+    game.levelScoreBest = 0;
+    game.start();
+  };
+  
+  // Override gameOver to not call server
+  var origGameOver = game.gameOver;
+  game.gameOver = function() {
+    if (game.score < 1) {
+      // Restart with same level
+      game.playStartSecsElapsed = 0;
+      game.start();
+      return;
+    }
+    game.scoreSaveLoading = 0;
+    game.levelScoreAverage = 0;
+    game.stateGo('over');
+    // Auto-restart after 3 seconds
+    setTimeout(function() {
+      game.playStartSecsElapsed = 0;
+      game.start();
+    }, 3000);
+  };
+  
+  // Override stateGo to hide elements we don't need
+  var origStateGo = game.stateGo;
+  game.stateGo = function(state) {
+    origStateGo.call(game, state);
+    // Always show game div when playing
+    if (state === 'playing') {
+      gGameDiv.style.display = 'block';
+    }
+  };
+  
+  // Hook into score changes
+  var origReleased = game.released;
+  game.released = function(div, word) {
+    var scoreBefore = game.score;
+    origReleased.call(game, div, word);
+    if (game.score !== scoreBefore) {
+      _euphoriaCheckScore(game.score);
+    }
+  };
+  
+  // Stub ajax
+  game.ajax = function(url, f, onError) {
+    gLog('ajax stubbed:', url);
+    if (onError) onError(new Error('offline'));
+  };
+})();
+</script>
+</body>
+</html>

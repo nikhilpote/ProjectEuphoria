@@ -15,7 +15,8 @@ export type GameType =
   | 'fruit_cutting'
   | 'knife_at_center'
   | 'find_items'
-  | 'tap_tap_shoot';
+  | 'tap_tap_shoot'
+  | 'wording';
 
 // ---------------------------------------------------------------------------
 // Trivia

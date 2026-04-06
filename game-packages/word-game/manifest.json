@@ -1,0 +1,23 @@
+{
+  "id": "wording",
+  "name": "Wording",
+  "version": "1.0.0",
+  "description": "Swipe letters to make words — reach the target score to survive",
+  "layout": "fullscreen",
+  "configSchema": {
+    "requiredScore": {
+      "type": "number",
+      "label": "Score to reach",
+      "required": false,
+      "min": 1,
+      "max": 200
+    },
+    "level": {
+      "type": "number",
+      "label": "Level (1-21, 0 = random)",
+      "required": false,
+      "min": 0,
+      "max": 21
+    }
+  }
+}
