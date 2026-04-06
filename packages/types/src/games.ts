@@ -18,7 +18,8 @@ export type GameType =
   | 'tap_tap_shoot'
   | 'wording'
   | 'emoji-puzzle'
-  | 'arithmetic';
+  | 'arithmetic'
+  | 'match-3';
 
 // ---------------------------------------------------------------------------
 // Trivia

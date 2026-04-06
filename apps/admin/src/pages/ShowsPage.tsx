@@ -35,6 +35,7 @@ const GAME_TYPES = [
   'wording',
   'emoji-puzzle',
   'arithmetic',
+  'match-3',
 ];
 
 const GAME_TYPE_LABELS: Record<string, string> = {
@@ -51,6 +52,7 @@ const GAME_TYPE_LABELS: Record<string, string> = {
   wording: 'Wording',
   'emoji-puzzle': 'Emoji Match',
   arithmetic: 'Arithmetic Rush',
+  'match-3': 'Gem Blitz',
 };
 
 const GAME_TYPE_SHORT: Record<string, string> = {
@@ -67,6 +69,7 @@ const GAME_TYPE_SHORT: Record<string, string> = {
   wording: 'WRD',
   'emoji-puzzle': 'EMJ',
   arithmetic: 'MTH',
+  'match-3': 'GEM',
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -172,6 +175,8 @@ function defaultConfig(gameType: string): Record<string, unknown> {
     return { emojiPuzzle: { requiredScore: 4, level: 0 } };
   if (gameType === 'arithmetic')
     return { arithmetic: { requiredScore: 10, difficulty: 2 } };
+  if (gameType === 'match-3')
+    return { match3: { requiredScore: 500 } };
   return {};
 }
 
@@ -293,6 +298,15 @@ const GAME_TEMPLATE = [
       },
     },
     timeLimitMs: 30000,
+  },
+  {
+    gameType: 'match-3',
+    config: {
+      match3: {
+        requiredScore: 500,
+      },
+    },
+    timeLimitMs: 60000,
   },
 ];
 
@@ -1007,6 +1021,30 @@ function MarkerCard({
               {emojiLevels[selLevel - 1].preview}
             </div>
           )}
+        </div>
+      );
+    }
+    if (marker.gameType === 'match-3') {
+      const m3 = (marker.config?.match3 ?? {}) as Record<string, unknown>;
+      return (
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+            Score to reach
+          </label>
+          <input
+            type="number"
+            min={10}
+            max={5000}
+            step={50}
+            value={(m3.requiredScore as number) ?? 500}
+            onChange={(e) =>
+              onUpdate({
+                config: { match3: { ...m3, requiredScore: parseInt(e.target.value) || 500 } },
+              })
+            }
+            className="w-28 rounded-md bg-gray-800 border border-gray-700 px-2 py-1 text-sm text-gray-100 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none"
+          />
+          <span className="text-[10px] text-gray-600">Match = 30pts base, combos multiply. 500 ≈ 1 level</span>
         </div>
       );
     }

@@ -1,0 +1,16 @@
+{
+  "id": "match-3",
+  "name": "Gem Blitz",
+  "version": "1.0.0",
+  "description": "Swap gems to make matches of 3+ — reach the target score to survive",
+  "layout": "fullscreen",
+  "configSchema": {
+    "requiredScore": {
+      "type": "number",
+      "label": "Score to reach",
+      "required": false,
+      "min": 10,
+      "max": 5000
+    }
+  }
+}

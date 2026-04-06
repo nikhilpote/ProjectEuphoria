@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no">
+<title>Match 3 - Gem Blitz</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #080812; }
+canvas { display: block; }
+#euphoria-hud {
+  position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+  z-index: 99999; pointer-events: none; display: flex; align-items: center; gap: 8px;
+  background: rgba(13,13,26,0.9); border: 1px solid #2A2A4A; border-radius: 20px;
+  padding: 6px 14px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px; font-weight: 700; color: #9CA3AF;
+}
+#hud-status { display: none; font-size: 11px; font-weight: 800; letter-spacing: 1px; padding: 2px 8px; border-radius: 10px; }
+#hud-status.passed { display: inline; background: #10B981; color: #fff; }
+</style>
+</head>
+<body>
+<div id="euphoria-hud">
+  <span id="hud-score">0 / 10</span>
+  <span id="hud-status"></span>
+</div>
+<script src="scripts/pixi.min.js"></script>
+<script src="scripts/game.js"></script>
+<script>
+(function() {
+  var submitted = false;
+  var startTs = Date.now();
+  var required = 10;
+  var lastScore = 0;
+
+  var $hudScore = document.getElementById('hud-score');
+  var $hudStatus = document.getElementById('hud-status');
+
+  function parseInit(g) {
+    if (g && g.requiredScore) required = Number(g.requiredScore);
+    $hudScore.textContent = '0 / ' + required;
+  }
+
+  // 3-channel reception
+  if (location.hash && location.hash.length > 1) {
+    try { parseInit(JSON.parse(decodeURIComponent(location.hash.slice(1)))); } catch(e) {}
+  }
+  if (window.__EUPHORIA_GAME__) parseInit(window.__EUPHORIA_GAME__.payload || window.__EUPHORIA_GAME__);
+  window.addEventListener('message', function(e) {
+    var msg;
+    try { msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch(err) { return; }
+    if (msg && msg.type === 'GAME_INIT' && msg.payload) parseInit(msg.payload);
+  });
+
+  function postToNative(msg) {
+    var str = JSON.stringify(msg);
+    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(str);
+    else window.parent.postMessage(str, '*');
+  }
+
+  // Monitor the game's score — the game exposes window.GAME_SCORE or we poll
+  setInterval(function() {
+    // The game.js sets score in its own variable. Check if it's exposed.
+    var score = window._gemBlitzScore || 0;
+    if (score !== lastScore) {
+      lastScore = score;
+      $hudScore.textContent = score + ' / ' + required;
+      if (score >= required && !submitted) {
+        submitted = true;
+        $hudStatus.textContent = 'PASSED';
+        $hudStatus.className = 'passed';
+        postToNative({
+          type: 'SUBMIT_ANSWER',
+          payload: { gameType: 'match-3', correct: true, score: score, timeTakenMs: Date.now() - startTs }
+        });
+      }
+    }
+  }, 300);
+
+  setTimeout(function() { postToNative({ type: 'READY' }); }, 500);
+})();
+</script>
+</body>
+</html>

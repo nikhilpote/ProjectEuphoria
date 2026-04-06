@@ -10,6 +10,7 @@ import { TapTapShootHandler } from './handlers/tap-tap-shoot.handler';
 import { WordingHandler } from './handlers/wording.handler';
 import { EmojiPuzzleHandler } from './handlers/emoji-puzzle.handler';
 import { ArithmeticHandler } from './handlers/arithmetic.handler';
+import { Match3Handler } from './handlers/match-3.handler';
 
 /**
  * GamesModule aggregates all mini-game sub-modules and the game handler registry.
@@ -37,5 +38,6 @@ export class GamesModule implements OnModuleInit {
     this.registry.register(new WordingHandler());
     this.registry.register(new EmojiPuzzleHandler());
     this.registry.register(new ArithmeticHandler());
+    this.registry.register(new Match3Handler());
   }
 }
