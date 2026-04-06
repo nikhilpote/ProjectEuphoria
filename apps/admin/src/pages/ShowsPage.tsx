@@ -34,6 +34,7 @@ const GAME_TYPES = [
   'tap_tap_shoot',
   'wording',
   'emoji-puzzle',
+  'arithmetic',
 ];
 
 const GAME_TYPE_LABELS: Record<string, string> = {
@@ -49,6 +50,7 @@ const GAME_TYPE_LABELS: Record<string, string> = {
   tap_tap_shoot: 'Tap Tap Shoot',
   wording: 'Wording',
   'emoji-puzzle': 'Emoji Match',
+  arithmetic: 'Arithmetic Rush',
 };
 
 const GAME_TYPE_SHORT: Record<string, string> = {
@@ -64,6 +66,7 @@ const GAME_TYPE_SHORT: Record<string, string> = {
   tap_tap_shoot: 'TTS',
   wording: 'WRD',
   'emoji-puzzle': 'EMJ',
+  arithmetic: 'MTH',
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -167,6 +170,8 @@ function defaultConfig(gameType: string): Record<string, unknown> {
     return { wording: { requiredScore: 10 } };
   if (gameType === 'emoji-puzzle')
     return { emojiPuzzle: { requiredScore: 4, level: 0 } };
+  if (gameType === 'arithmetic')
+    return { arithmetic: { requiredScore: 10, difficulty: 2 } };
   return {};
 }
 
@@ -275,6 +280,16 @@ const GAME_TEMPLATE = [
       emojiPuzzle: {
         requiredScore: 4,
         level: 0,
+      },
+    },
+    timeLimitMs: 30000,
+  },
+  {
+    gameType: 'arithmetic',
+    config: {
+      arithmetic: {
+        requiredScore: 10,
+        difficulty: 2,
       },
     },
     timeLimitMs: 30000,
@@ -992,6 +1007,49 @@ function MarkerCard({
               {emojiLevels[selLevel - 1].preview}
             </div>
           )}
+        </div>
+      );
+    }
+    if (marker.gameType === 'arithmetic') {
+      const ar = (marker.config?.arithmetic ?? {}) as Record<string, unknown>;
+      const diffLabels = ['', 'Easy (single digit +/-)', 'Medium (double digit, ×)', 'Hard (+/-/×/÷)', 'Expert (larger numbers)', 'Insane (triple digits, parentheses)'];
+      return (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+              Score to reach
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={(ar.requiredScore as number) ?? 10}
+              onChange={(e) =>
+                onUpdate({
+                  config: { arithmetic: { ...ar, requiredScore: parseInt(e.target.value) || 10 } },
+                })
+              }
+              className="w-24 rounded-md bg-gray-800 border border-gray-700 px-2 py-1 text-sm text-gray-100 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+              Difficulty
+            </label>
+            <select
+              value={(ar.difficulty as number) ?? 2}
+              onChange={(e) =>
+                onUpdate({
+                  config: { arithmetic: { ...ar, difficulty: parseInt(e.target.value) || 2 } },
+                })
+              }
+              className="w-full px-3 py-2 rounded-lg bg-[#0A0A14] border border-[#2A2A4A] text-sm text-gray-100 focus:outline-none focus:border-[#7C3AED] transition-colors"
+            >
+              {[1,2,3,4,5].map((d) => (
+                <option key={d} value={d}>{d}. {diffLabels[d]}</option>
+              ))}
+            </select>
+          </div>
         </div>
       );
     }

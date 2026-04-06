@@ -1,0 +1,23 @@
+{
+  "id": "arithmetic",
+  "name": "Arithmetic Rush",
+  "version": "1.0.0",
+  "description": "Solve math equations fast — reach the target score to survive",
+  "layout": "fullscreen",
+  "configSchema": {
+    "requiredScore": {
+      "type": "number",
+      "label": "Score to reach",
+      "required": false,
+      "min": 1,
+      "max": 50
+    },
+    "difficulty": {
+      "type": "number",
+      "label": "Difficulty (1-5)",
+      "required": false,
+      "min": 1,
+      "max": 5
+    }
+  }
+}

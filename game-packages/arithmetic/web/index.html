@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Arithmetic Rush</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      background: #0D0D1A;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      height: 100%;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    #loading {
+      position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; background: #0D0D1A; z-index: 100;
+    }
+    #loading.hidden { display: none; }
+    .spinner {
+      width: 36px; height: 36px; border: 3px solid #2A2A4A;
+      border-top-color: #7C3AED; border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Layout ── */
+    #root {
+      display: flex; flex-direction: column;
+      height: 100vh; padding: 12px 16px 20px;
+      gap: 0;
+    }
+
+    /* ── HUD row ── */
+    #hud {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 0 6px;
+      flex-shrink: 0;
+    }
+    #score-display {
+      display: flex; align-items: center; gap: 8px;
+    }
+    #score-label {
+      font-size: 13px; color: #9CA3AF; font-weight: 500; letter-spacing: 0.5px;
+    }
+    #score-val {
+      font-size: 24px; font-weight: 800;
+      color: #fff;
+      font-family: 'SF Mono', 'Roboto Mono', monospace;
+      transition: transform 0.15s ease;
+    }
+    #score-val.pulse {
+      animation: scorePulse 0.35s ease;
+    }
+    @keyframes scorePulse {
+      0%   { transform: scale(1); color: #10B981; }
+      40%  { transform: scale(1.35); color: #10B981; }
+      100% { transform: scale(1); color: #fff; }
+    }
+    #passed-badge {
+      display: none;
+      background: #10B981;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      padding: 3px 8px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      animation: badgePop 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    #passed-badge.visible { display: inline-block; }
+    @keyframes badgePop {
+      0% { transform: scale(0.5); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    #timer-info {
+      display: flex; align-items: center; gap: 6px;
+    }
+    #time-remaining {
+      font-size: 13px;
+      font-weight: 600;
+      font-family: 'SF Mono', 'Roboto Mono', monospace;
+      color: #9CA3AF;
+      min-width: 32px;
+      text-align: right;
+    }
+    #time-remaining.urgent { color: #EF4444; }
+
+    /* ── Timer bar ── */
+    #timer-track {
+      width: 100%; height: 3px; background: #1A1A2E; border-radius: 2px;
+      flex-shrink: 0; margin-bottom: 0;
+    }
+    #timer-fill {
+      height: 100%; background: #7C3AED; border-radius: 2px;
+      transform-origin: left; transition: background 0.3s;
+    }
+    #timer-fill.urgent { background: #EF4444; }
+
+    /* ── Question counter dots ── */
+    #q-counter {
+      display: flex; align-items: center; justify-content: center;
+      gap: 4px; padding: 10px 0 6px; flex-shrink: 0;
+    }
+
+    /* ── Equation area ── */
+    #eq-area {
+      flex: 1;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 12px;
+      position: relative;
+      min-height: 0;
+    }
+
+    #question-type-badge {
+      font-size: 11px; font-weight: 600; letter-spacing: 1.5px;
+      color: #9CA3AF; text-transform: uppercase;
+      opacity: 0.7;
+    }
+
+    #equation-wrap {
+      position: relative;
+      width: 100%;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    #equation {
+      font-size: 42px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      text-align: center;
+      line-height: 1.1;
+      color: #fff;
+      padding: 20px 24px;
+      background: #1A1A2E;
+      border: 1.5px solid #2A2A4A;
+      border-radius: 20px;
+      min-width: 220px;
+      max-width: 320px;
+      width: 100%;
+    }
+    #equation.shake {
+      animation: shake 0.4s ease;
+    }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      15%      { transform: translateX(-10px); }
+      30%      { transform: translateX(10px); }
+      45%      { transform: translateX(-8px); }
+      60%      { transform: translateX(8px); }
+      75%      { transform: translateX(-4px); }
+      90%      { transform: translateX(4px); }
+    }
+    #equation .blank {
+      color: #7C3AED;
+      background: rgba(124,58,237,0.15);
+      border-bottom: 2.5px solid #7C3AED;
+      padding: 0 6px;
+      border-radius: 4px;
+    }
+
+    #feedback-flash {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      border-radius: 20px;
+      pointer-events: none;
+      opacity: 0;
+    }
+    #feedback-flash.correct {
+      animation: flashGreen 0.35s ease;
+    }
+    #feedback-flash.wrong {
+      animation: flashRed 0.3s ease;
+    }
+    @keyframes flashGreen {
+      0%   { opacity: 0; background: rgba(16,185,129,0); border: 2px solid rgba(16,185,129,0); }
+      30%  { opacity: 1; background: rgba(16,185,129,0.15); border: 2px solid rgba(16,185,129,0.6); }
+      100% { opacity: 0; background: rgba(16,185,129,0); border: 2px solid rgba(16,185,129,0); }
+    }
+    @keyframes flashRed {
+      0%   { opacity: 0; background: rgba(239,68,68,0); }
+      30%  { opacity: 1; background: rgba(239,68,68,0.18); }
+      100% { opacity: 0; background: rgba(239,68,68,0); }
+    }
+
+    #streak-display {
+      font-size: 13px; font-weight: 600;
+      color: #F59E0B;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    #streak-display.visible { opacity: 1; }
+
+    /* ── Answer buttons ── */
+    #answers {
+      flex-shrink: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 10px 0 4px;
+      width: 100%;
+    }
+    #answers.three-col {
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+    }
+    #answers.two-col {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .ans-btn {
+      background: #1A1A2E;
+      border: 1.5px solid #2A2A4A;
+      border-radius: 14px;
+      color: #fff;
+      font-size: 22px;
+      font-weight: 700;
+      padding: 0;
+      height: 64px;
+      cursor: pointer;
+      transition: transform 0.08s ease, background 0.08s ease, border-color 0.08s ease;
+      -webkit-tap-highlight-color: transparent;
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .ans-btn:active {
+      transform: scale(0.94);
+      background: #25254A;
+    }
+    .ans-btn.correct-flash {
+      background: #065F46;
+      border-color: #10B981;
+      color: #10B981;
+      transform: scale(1.04);
+    }
+    .ans-btn.wrong-flash {
+      background: #450A0A;
+      border-color: #EF4444;
+      color: #EF4444;
+    }
+    .ans-btn.disabled {
+      pointer-events: none;
+      opacity: 0.5;
+    }
+    .ans-btn .ripple {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      transform: scale(0);
+      animation: ripple 0.4s linear;
+      pointer-events: none;
+    }
+    @keyframes ripple {
+      to { transform: scale(4); opacity: 0; }
+    }
+
+    /* ── True/False specific ── */
+    .ans-btn.tf-true {
+      background: #0D2D1F;
+      border-color: #10B981;
+      color: #10B981;
+      font-size: 28px;
+    }
+    .ans-btn.tf-false {
+      background: #2D0D0D;
+      border-color: #EF4444;
+      color: #EF4444;
+      font-size: 28px;
+    }
+
+    /* ── End screen ── */
+    #end-screen {
+      display: none;
+      position: fixed; inset: 0;
+      background: #0D0D1A;
+      flex-direction: column; align-items: center; justify-content: center;
+      gap: 16px; padding: 32px;
+      z-index: 50;
+    }
+    #end-screen.visible { display: flex; }
+    #end-title {
+      font-size: 28px; font-weight: 800; color: #fff;
+      text-align: center;
+    }
+    #end-subtitle {
+      font-size: 15px; color: #9CA3AF; text-align: center;
+      line-height: 1.5;
+    }
+    #end-score-circle {
+      width: 120px; height: 120px;
+      border-radius: 50%;
+      border: 3px solid #7C3AED;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: #1A1A2E;
+      box-shadow: 0 0 30px rgba(124,58,237,0.3);
+    }
+    #end-score-num {
+      font-size: 44px; font-weight: 900;
+      font-family: 'SF Mono', 'Roboto Mono', monospace;
+      color: #fff; line-height: 1;
+    }
+    #end-score-label {
+      font-size: 11px; color: #9CA3AF; font-weight: 600;
+      letter-spacing: 1px; text-transform: uppercase;
+      margin-top: 2px;
+    }
+    #end-result-badge {
+      font-size: 13px; font-weight: 700;
+      letter-spacing: 1px; text-transform: uppercase;
+      padding: 6px 16px; border-radius: 20px;
+    }
+    #end-result-badge.passed {
+      background: rgba(16,185,129,0.15);
+      border: 1px solid #10B981;
+      color: #10B981;
+    }
+    #end-result-badge.failed {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid #EF4444;
+      color: #EF4444;
+    }
+    #end-stats {
+      display: flex; gap: 24px;
+    }
+    .end-stat {
+      text-align: center;
+    }
+    .end-stat-val {
+      font-size: 20px; font-weight: 700; color: #fff;
+      font-family: 'SF Mono', 'Roboto Mono', monospace;
+    }
+    .end-stat-label {
+      font-size: 11px; color: #9CA3AF; margin-top: 2px;
+    }
+
+    /* ── Transition ── */
+    #eq-area.fade-out { animation: fadeSlideOut 0.12s ease forwards; }
+    #eq-area.fade-in  { animation: fadeSlideIn  0.14s ease forwards; }
+    @keyframes fadeSlideOut {
+      0%   { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-12px); }
+    }
+    @keyframes fadeSlideIn {
+      0%   { opacity: 0; transform: translateY(10px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Subtle grid bg ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(124,58,237,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(124,58,237,0.04) 1px, transparent 1px);
+      background-size: 32px 32px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    #root { position: relative; z-index: 1; }
+    #loading { z-index: 100; }
+    #end-screen { z-index: 50; }
+  </style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <p style="color:#9CA3AF;font-size:12px;margin-top:12px">Loading...</p>
+</div>
+
+<div id="root">
+  <div id="hud">
+    <div id="score-display">
+      <span id="score-label">SCORE</span>
+      <span id="score-val">0</span>
+      <span id="passed-badge">PASSED</span>
+    </div>
+    <div id="timer-info">
+      <span id="time-remaining">30</span>
+    </div>
+  </div>
+
+  <div id="timer-track"><div id="timer-fill"></div></div>
+
+  <div id="eq-area">
+    <div id="question-type-badge">Missing Operator</div>
+    <div id="equation-wrap">
+      <div id="equation">7 <span class="blank">?</span> 3 = 21</div>
+      <div id="feedback-flash"></div>
+    </div>
+    <div id="streak-display">3 in a row!</div>
+  </div>
+
+  <div id="answers"></div>
+</div>
+
+<div id="end-screen">
+  <div id="end-title">Time's Up!</div>
+  <div id="end-score-circle">
+    <div id="end-score-num">0</div>
+    <div id="end-score-label">CORRECT</div>
+  </div>
+  <div id="end-result-badge" class="failed">MISSED TARGET</div>
+  <div id="end-stats">
+    <div class="end-stat">
+      <div class="end-stat-val" id="end-total">0</div>
+      <div class="end-stat-label">Attempted</div>
+    </div>
+    <div class="end-stat">
+      <div class="end-stat-val" id="end-accuracy">0%</div>
+      <div class="end-stat-label">Accuracy</div>
+    </div>
+    <div class="end-stat">
+      <div class="end-stat-val" id="end-streak">0</div>
+      <div class="end-stat-label">Best Streak</div>
+    </div>
+  </div>
+  <div id="end-subtitle">Keep practicing to improve your speed!</div>
+</div>
+
+<script>
+// ── Config & State ──────────────────────────────────────────────────────────
+var timeLimitMs = 30000;
+var requiredScore = 5;
+var difficulty = 2;
+var startTs = null;
+var rafId = null;
+var gameOver = false;
+var submitPosted = false;
+
+var score = 0;
+var totalAttempted = 0;
+var currentStreak = 0;
+var bestStreak = 0;
+var currentQ = null;
+var transitioning = false;
+
+// ── DOM refs ────────────────────────────────────────────────────────────────
+var $loading      = document.getElementById('loading');
+var $fill         = document.getElementById('timer-fill');
+var $timeRemain   = document.getElementById('time-remaining');
+var $scoreVal     = document.getElementById('score-val');
+var $passedBadge  = document.getElementById('passed-badge');
+var $equation     = document.getElementById('equation');
+var $feedFlash    = document.getElementById('feedback-flash');
+var $answers      = document.getElementById('answers');
+var $eqArea       = document.getElementById('eq-area');
+var $qTypeBadge   = document.getElementById('question-type-badge');
+var $streakDisp   = document.getElementById('streak-display');
+var $endScreen    = document.getElementById('end-screen');
+var $endScoreNum  = document.getElementById('end-score-num');
+var $endBadge     = document.getElementById('end-result-badge');
+var $endTotal     = document.getElementById('end-total');
+var $endAccuracy  = document.getElementById('end-accuracy');
+var $endStreakSt  = document.getElementById('end-streak');
+
+// ── Question generation ─────────────────────────────────────────────────────
+function rnd(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function shuffle(arr) {
+  var a = arr.slice();
+  for (var i = a.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+  }
+  return a;
+}
+
+function clamp(val, lo, hi) {
+  return Math.max(lo, Math.min(hi, val));
+}
+
+// Returns {a, b, op, result} with no remainder division
+function makePair(diff) {
+  var ops;
+  if (diff === 1) {
+    ops = ['+', '-'];
+  } else if (diff === 2) {
+    ops = ['+', '-', '+', '-', 'x'];
+  } else if (diff === 3) {
+    ops = ['+', '-', 'x', 'x', '/'];
+  } else {
+    ops = ['+', '-', 'x', '/'];
+  }
+
+  var op = ops[rnd(0, ops.length - 1)];
+  var a, b, result;
+
+  if (op === '+') {
+    if (diff === 1) { a = rnd(1, 9); b = rnd(1, 9); }
+    else if (diff === 2) { a = rnd(10, 50); b = rnd(5, 30); }
+    else if (diff === 3) { a = rnd(20, 80); b = rnd(10, 50); }
+    else if (diff === 4) { a = rnd(50, 200); b = rnd(20, 100); }
+    else { a = rnd(100, 500); b = rnd(50, 300); }
+    result = a + b;
+  } else if (op === '-') {
+    if (diff === 1) { a = rnd(3, 18); b = rnd(1, 9); a = Math.max(a, b + 1); }
+    else if (diff === 2) { a = rnd(20, 80); b = rnd(5, 30); }
+    else if (diff === 3) { a = rnd(40, 150); b = rnd(10, 60); }
+    else if (diff === 4) { a = rnd(80, 300); b = rnd(30, 120); }
+    else { a = rnd(200, 800); b = rnd(50, 300); }
+    if (a < b) { var tmp2 = a; a = b; b = tmp2; }
+    result = a - b;
+  } else if (op === 'x') {
+    if (diff === 2) { a = rnd(2, 9); b = rnd(2, 9); }
+    else if (diff === 3) { a = rnd(2, 12); b = rnd(2, 12); }
+    else if (diff === 4) { a = rnd(5, 20); b = rnd(3, 15); }
+    else { a = rnd(10, 40); b = rnd(5, 20); }
+    result = a * b;
+  } else {
+    // Division: pick b and result first, compute a
+    if (diff === 3) { b = rnd(2, 9); result = rnd(2, 9); }
+    else if (diff === 4) { b = rnd(2, 12); result = rnd(2, 12); }
+    else { b = rnd(3, 15); result = rnd(3, 20); }
+    a = b * result;
+  }
+
+  return { a: a, b: b, op: op, result: result };
+}
+
+// Generate wrong number options close to the correct answer
+function wrongNumbers(correct, count, diff) {
+  var set = {};
+  set[correct] = true;
+  var attempts = 0;
+  var spread = diff <= 2 ? 5 : (diff <= 3 ? 10 : 20);
+  while (Object.keys(set).length < count + 1 && attempts < 200) {
+    attempts++;
+    var delta = rnd(1, spread);
+    if (Math.random() < 0.5) delta = -delta;
+    var candidate = correct + delta;
+    if (candidate >= 0 && candidate !== correct) {
+      set[candidate] = true;
+    }
+  }
+  var arr = [];
+  for (var k in set) {
+    if (parseInt(k, 10) !== correct) arr.push(parseInt(k, 10));
+  }
+  return arr.slice(0, count);
+}
+
+function opSymbol(op) {
+  if (op === 'x') return '\u00d7';
+  if (op === '/') return '\u00f7';
+  return op;
+}
+
+// Question type: missing operator
+function makeMissingOp(diff) {
+  var pair = makePair(diff);
+  var opts = shuffle([pair.op, '+', '-', 'x', '/'].filter(function(o, i, a) {
+    return a.indexOf(o) === i;
+  }));
+  // ensure correct in options
+  if (opts.indexOf(pair.op) === -1) opts[0] = pair.op;
+  opts = shuffle(opts.slice(0, 4));
+
+  return {
+    type: 'missing_op',
+    html: pair.a + ' <span class="blank">?</span> ' + pair.b + ' = ' + pair.result,
+    plain: pair.a + ' ? ' + pair.b + ' = ' + pair.result,
+    correct: pair.op,
+    options: opts,
+    label: 'Missing Operator'
+  };
+}
+
+// Question type: true/false
+function makeTrueFalse(diff) {
+  var pair = makePair(diff);
+  var isTrue = Math.random() < 0.5;
+  var shownResult;
+  if (isTrue) {
+    shownResult = pair.result;
+  } else {
+    // Generate a plausible wrong result
+    var delta = rnd(1, diff <= 2 ? 4 : 8);
+    if (Math.random() < 0.5) delta = -delta;
+    shownResult = pair.result + delta;
+    if (shownResult <= 0) shownResult = pair.result + Math.abs(delta);
+    if (shownResult === pair.result) shownResult = pair.result + 1;
+  }
+
+  return {
+    type: 'true_false',
+    html: pair.a + ' ' + opSymbol(pair.op) + ' ' + pair.b + ' = ' + shownResult,
+    plain: pair.a + ' ' + opSymbol(pair.op) + ' ' + pair.b + ' = ' + shownResult,
+    correct: isTrue ? 'true' : 'false',
+    options: ['true', 'false'],
+    label: 'True or False?'
+  };
+}
+
+// Question type: pick the answer
+function makePickAnswer(diff) {
+  var pair = makePair(diff);
+  var wrongs = wrongNumbers(pair.result, 3, diff);
+  var opts = shuffle([pair.result].concat(wrongs));
+
+  return {
+    type: 'pick_answer',
+    html: pair.a + ' ' + opSymbol(pair.op) + ' ' + pair.b + ' = <span class="blank">?</span>',
+    plain: pair.a + ' ' + opSymbol(pair.op) + ' ' + pair.b + ' = ?',
+    correct: pair.result,
+    options: opts,
+    label: 'Pick the Answer'
+  };
+}
+
+function generateQuestion() {
+  var roll = rnd(0, 2);
+  // Diff 1 can't do missing op with only +/- meaningfully → bias toward pick_answer
+  if (difficulty === 1) {
+    roll = rnd(0, 1); // only true/false and pick_answer
+    if (roll === 0) return makeTrueFalse(difficulty);
+    return makePickAnswer(difficulty);
+  }
+  if (roll === 0) return makeMissingOp(difficulty);
+  if (roll === 1) return makeTrueFalse(difficulty);
+  return makePickAnswer(difficulty);
+}
+
+// ── Render question ─────────────────────────────────────────────────────────
+function renderQuestion(q) {
+  currentQ = q;
+  transitioning = false;
+
+  $qTypeBadge.textContent = q.label;
+  $equation.innerHTML = q.html;
+
+  $answers.innerHTML = '';
+
+  if (q.type === 'true_false') {
+    $answers.className = 'two-col';
+  } else if (q.type === 'missing_op') {
+    $answers.className = 'three-col';
+  } else {
+    $answers.className = '';
+    $answers.style.gridTemplateColumns = '1fr 1fr';
+  }
+
+  for (var i = 0; i < q.options.length; i++) {
+    (function(opt) {
+      var btn = document.createElement('button');
+      btn.className = 'ans-btn';
+
+      if (q.type === 'true_false') {
+        if (opt === 'true') {
+          btn.className = 'ans-btn tf-true';
+          btn.textContent = '\u2713';
+        } else {
+          btn.className = 'ans-btn tf-false';
+          btn.textContent = '\u2717';
+        }
+      } else if (q.type === 'missing_op') {
+        btn.textContent = opSymbol(opt);
+        btn.style.fontSize = '26px';
+      } else {
+        btn.textContent = opt;
+      }
+
+      btn.addEventListener('click', function(e) {
+        if (transitioning) return;
+        addRipple(btn, e);
+        handleAnswer(opt, btn);
+      });
+
+      $answers.appendChild(btn);
+    })(q.options[i]);
+  }
+}
+
+function addRipple(btn, e) {
+  var rect = btn.getBoundingClientRect();
+  var r = document.createElement('span');
+  r.className = 'ripple';
+  var size = Math.max(rect.width, rect.height);
+  r.style.width = size + 'px';
+  r.style.height = size + 'px';
+  var x = (e.clientX - rect.left) - size / 2;
+  var y = (e.clientY - rect.top)  - size / 2;
+  r.style.left = x + 'px';
+  r.style.top  = y + 'px';
+  btn.appendChild(r);
+  setTimeout(function() { if (r.parentNode) r.parentNode.removeChild(r); }, 450);
+}
+
+// ── Answer handling ─────────────────────────────────────────────────────────
+function handleAnswer(chosen, btn) {
+  if (gameOver || transitioning) return;
+  transitioning = true;
+  totalAttempted++;
+
+  var isCorrect = String(chosen) === String(currentQ.correct);
+
+  // Disable all buttons
+  var allBtns = $answers.querySelectorAll('.ans-btn');
+  for (var i = 0; i < allBtns.length; i++) {
+    allBtns[i].classList.add('disabled');
+  }
+
+  if (isCorrect) {
+    score++;
+    currentStreak++;
+    if (currentStreak > bestStreak) bestStreak = currentStreak;
+
+    btn.classList.add('correct-flash');
+
+    // Green flash overlay
+    $feedFlash.className = 'correct';
+    setTimeout(function() { $feedFlash.className = ''; }, 400);
+
+    // Score pulse
+    $scoreVal.textContent = score;
+    $scoreVal.classList.remove('pulse');
+    void $scoreVal.offsetWidth; // reflow
+    $scoreVal.classList.add('pulse');
+    setTimeout(function() { $scoreVal.classList.remove('pulse'); }, 400);
+
+    // Check passed
+    if (score >= requiredScore && !submitPosted) {
+      submitPosted = true;
+      postToNative({
+        type: 'SUBMIT_ANSWER',
+        payload: { gameType: 'arithmetic', selectedOptionId: 'pass', correct: true }
+      });
+      $passedBadge.classList.add('visible');
+    }
+
+    // Streak label
+    if (currentStreak >= 3) {
+      $streakDisp.textContent = currentStreak + ' in a row!';
+      $streakDisp.classList.add('visible');
+    } else {
+      $streakDisp.classList.remove('visible');
+    }
+
+    // Next question quickly
+    setTimeout(function() { nextQuestion(); }, 200);
+
+  } else {
+    currentStreak = 0;
+    $streakDisp.classList.remove('visible');
+
+    btn.classList.add('wrong-flash');
+    $equation.classList.remove('shake');
+    void $equation.offsetWidth;
+    $equation.classList.add('shake');
+
+    // Red flash overlay
+    $feedFlash.className = 'wrong';
+    setTimeout(function() { $feedFlash.className = ''; }, 350);
+
+    // Next question after brief pause
+    setTimeout(function() { nextQuestion(); }, 350);
+  }
+}
+
+function nextQuestion() {
+  if (gameOver) return;
+  $eqArea.classList.add('fade-out');
+  setTimeout(function() {
+    $eqArea.classList.remove('fade-out');
+    var q = generateQuestion();
+    renderQuestion(q);
+    $eqArea.classList.add('fade-in');
+    setTimeout(function() { $eqArea.classList.remove('fade-in'); }, 160);
+  }, 110);
+}
+
+// ── Timer ───────────────────────────────────────────────────────────────────
+function startTimer() {
+  startTs = Date.now();
+  (function tick() {
+    if (gameOver) return;
+    var elapsed = Date.now() - startTs;
+    var remaining = Math.max(0, timeLimitMs - elapsed);
+    var ratio = remaining / timeLimitMs;
+
+    $fill.style.transform = 'scaleX(' + ratio + ')';
+
+    var secs = Math.ceil(remaining / 1000);
+    $timeRemain.textContent = secs;
+
+    var isUrgent = remaining < 6000;
+    if (isUrgent) {
+      $fill.classList.add('urgent');
+      $timeRemain.classList.add('urgent');
+    } else {
+      $fill.classList.remove('urgent');
+      $timeRemain.classList.remove('urgent');
+    }
+
+    if (remaining <= 0) {
+      endGame();
+    } else {
+      rafId = requestAnimationFrame(tick);
+    }
+  })();
+}
+
+// ── End game ─────────────────────────────────────────────────────────────────
+function endGame() {
+  if (gameOver) return;
+  gameOver = true;
+  cancelAnimationFrame(rafId);
+
+  // Post result if not already submitted
+  if (!submitPosted) {
+    postToNative({
+      type: 'SUBMIT_ANSWER',
+      payload: {
+        gameType: 'arithmetic',
+        selectedOptionId: String(score),
+        correct: score >= requiredScore,
+        score: score
+      }
+    });
+    submitPosted = true;
+  }
+
+  // Show end screen
+  $endScoreNum.textContent = score;
+  $endTotal.textContent = totalAttempted;
+  var acc = totalAttempted > 0 ? Math.round(score / totalAttempted * 100) : 0;
+  $endAccuracy.textContent = acc + '%';
+  $endStreakSt.textContent = bestStreak;
+
+  var passed = score >= requiredScore;
+  if (passed) {
+    document.getElementById('end-title').textContent = 'Time\u2019s Up!';
+    $endBadge.className = 'end-result-badge passed';
+    $endBadge.textContent = 'TARGET REACHED';
+    document.getElementById('end-subtitle').textContent = 'Great work! You hit the target score.';
+  } else {
+    document.getElementById('end-title').textContent = 'Time\u2019s Up!';
+    $endBadge.className = 'end-result-badge failed';
+    $endBadge.textContent = 'MISSED TARGET';
+    document.getElementById('end-subtitle').textContent = 'Need ' + requiredScore + ' — you got ' + score + '. Keep practicing!';
+  }
+
+  $endScreen.classList.add('visible');
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+function parseInit(payload) {
+  if (!payload) return;
+  timeLimitMs    = Number(payload.timeLimitMs  != null ? payload.timeLimitMs  : 30000);
+  requiredScore  = Number(payload.requiredScore != null ? payload.requiredScore : 5);
+  difficulty     = Number(payload.difficulty   != null ? payload.difficulty   : 2);
+  difficulty     = clamp(difficulty, 1, 5);
+  requiredScore  = clamp(requiredScore, 1, 50);
+
+  $scoreVal.textContent = '0';
+  var target = document.createElement('span');
+  target.style.color = '#9CA3AF';
+  target.style.fontSize = '14px';
+  target.style.fontWeight = '500';
+  target.textContent = ' / ' + requiredScore;
+  $scoreVal.after(target);
+
+  $loading.classList.add('hidden');
+
+  var q = generateQuestion();
+  renderQuestion(q);
+
+  startTimer();
+  postToNative({ type: 'READY' });
+}
+
+// ── Native bridge ──────────────────────────────────────────────────────────
+function postToNative(msg) {
+  var str = JSON.stringify(msg);
+  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(str);
+  else window.parent.postMessage(str, '*');
+}
+
+// ── 3-channel data reception ───────────────────────────────────────────────
+window.addEventListener('message', function(e) {
+  var msg;
+  try { msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch(err) { return; }
+  if (msg && msg.type === 'GAME_INIT' && msg.payload) parseInit(msg.payload);
+});
+
+(function() {
+  function go(g) {
+    parseInit(g.payload ? Object.assign({}, g.payload, { timeLimitMs: g.timeLimitMs }) : g);
+  }
+  if (location.hash && location.hash.length > 1) {
+    try { go(JSON.parse(decodeURIComponent(location.hash.slice(1)))); return; } catch(e) {}
+  }
+  if (window.__EUPHORIA_GAME__) { go(window.__EUPHORIA_GAME__); }
+})();
+
+setTimeout(function() { postToNative({ type: 'READY' }); }, 300);
+</script>
+</body>
+</html>
