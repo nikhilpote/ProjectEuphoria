@@ -85,11 +85,15 @@ export class GamePackagesService {
       }),
     );
 
-    // Resolve bundle URL
-    const bundleUrl = uploadedUrls.get('web/index.html');
+    // Resolve bundle URL — look for index.html at root or inside web/ folder.
+    let bundleUrl =
+      uploadedUrls.get('web/index.html')
+      ?? uploadedUrls.get('index.html')
+      ?? null;
+
     if (!bundleUrl) {
       await fs.unlink(zipLocalPath).catch(() => undefined);
-      throw new BadRequestException('ZIP must contain web/index.html as the bundle entry point');
+      throw new BadRequestException('ZIP must contain index.html or web/index.html as the bundle entry point');
     }
 
     // Resolve optional thumbnail

@@ -14,7 +14,8 @@ export type GameType =
   | 'spelling_bee'
   | 'fruit_cutting'
   | 'knife_at_center'
-  | 'find_items';
+  | 'find_items'
+  | 'tap_tap_shoot';
 
 // ---------------------------------------------------------------------------
 // Trivia
@@ -206,11 +207,21 @@ export interface GameManifestField {
  */
 export type GameLayout = 'overlay_bottom' | 'fullscreen' | 'overlay_top';
 
+/**
+ * Game engine type.
+ * - 'html5' (default): single self-contained index.html loaded in WebView.
+ * - 'construct3': Construct 3 + Box2D game. SDK is bundled in the app;
+ *   the game package only contains data.json, sprites, audio, and project scripts.
+ */
+export type GameEngine = 'html5' | 'construct3';
+
 export interface GameManifest {
   id: string;
   name: string;
   version: string;
   description?: string;
+  /** Game engine. Defaults to 'html5'. */
+  engine?: GameEngine;
   /** How the game panel is positioned over the video. Defaults to overlay_bottom. */
   layout: GameLayout;
   /** Drives the admin config form automatically */
@@ -225,7 +236,9 @@ export interface GamePackage {
   description: string | null;
   isEnabled: boolean;
   manifest: GameManifest;
-  /** CloudFront URL to web/index.html — loaded in mobile WebView */
+  /** CloudFront URL to the game entry point.
+   *  - html5 games: URL to web/index.html
+   *  - construct3 games: folder URL (e.g. .../tap_tap_shoot/) — app loads local SDK + remote assets */
   bundleUrl: string;
   thumbnailUrl: string | null;
   createdAt: string;

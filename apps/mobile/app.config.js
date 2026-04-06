@@ -67,6 +67,13 @@ module.exports = {
           microphonePermission: false, // video playback only, no recording
         },
       ],
+      [
+        'expo-asset',
+        {
+          // Bundle C3 + Box2D SDK as local WebView assets (Android + iOS)
+          assets: ['assets/c3-sdk'],
+        },
+      ],
     ],
 
     experiments: {

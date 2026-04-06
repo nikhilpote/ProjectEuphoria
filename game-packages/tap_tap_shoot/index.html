@@ -1,0 +1,117 @@
+<!DOCTYPE html><html><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+<link rel="stylesheet" href="style.css">
+<style>
+#euphoria-hud {
+  position:fixed; top:8px; left:50%; transform:translateX(-50%);
+  z-index:2147483646; pointer-events:none; display:flex; align-items:center; gap:8px;
+  background:rgba(13,13,26,0.9); border:1px solid #2A2A4A; border-radius:20px;
+  padding:6px 14px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  font-size:14px; font-weight:700; color:#9CA3AF; opacity:0; transition:opacity 0.4s;
+}
+#euphoria-hud.visible { opacity:1; }
+#hud-score { color:#fff; }
+#hud-status { display:none; font-size:11px; font-weight:800; letter-spacing:1px; padding:2px 8px; border-radius:10px; }
+#hud-status.passed { display:inline; background:#10B981; color:#fff; }
+canvas { z-index:1 !important; }
+</style>
+</head>
+<body>
+
+<div id="euphoria-hud">
+  <span id="hud-score">0 / 4</span>
+  <span id="hud-status"></span>
+</div>
+
+<script src="box2d.wasm.js"></script>
+<script src="scripts/supportcheck.js"></script>
+<script src="scripts/offlineclient.js" type="module"></script>
+<script src="scripts/main.js" type="module"></script>
+<script>
+(function() {
+  var submitted = false;
+  var startTs = Date.now();
+  var required = 4;
+  var passed = false;
+
+  var $hud = document.getElementById('euphoria-hud');
+  var $score = document.getElementById('hud-score');
+  var $status = document.getElementById('hud-status');
+
+  // ── Config ──
+  function parseInit(g) {
+    if (g && g.requiredScore) required = Number(g.requiredScore);
+    if (g && g.requiredLevel) required = Number(g.requiredLevel);
+    if (g && g.requiredBaskets) required = Number(g.requiredBaskets);
+    $score.textContent = '0 / ' + required;
+  }
+
+  // 3-channel reception
+  if (location.hash && location.hash.length > 1) {
+    try { parseInit(JSON.parse(decodeURIComponent(location.hash.slice(1)))); } catch(e) {}
+  }
+  if (window.__EUPHORIA_GAME__) parseInit(window.__EUPHORIA_GAME__.payload || window.__EUPHORIA_GAME__);
+  window.addEventListener('message', function(e) {
+    var msg;
+    try { msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch(err) { return; }
+    if (msg && msg.type === 'GAME_INIT' && msg.payload) parseInit(msg.payload);
+  });
+
+  // ── Native bridge ──
+  function postToNative(msg) {
+    var str = JSON.stringify(msg);
+    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(str);
+    else window.parent.postMessage(str, '*');
+  }
+
+  // ── Monitor C3 runtime ──
+  setInterval(function() {
+    var rt = window.c3_runtimeInterface;
+    if (!rt) return;
+    var localRt = rt._localRuntime;
+    if (!localRt) return;
+    var esm = localRt._eventSheetManager;
+    if (!esm) return;
+    var globals = esm._allGlobalVars;
+    if (!globals || !globals.length) return;
+    $hud.classList.add('visible');
+
+    // Read C3 score (points — +1 per basket, +2 for perfect shots)
+    var level = 0;
+    for (var i = 0; i < globals.length; i++) {
+      var v = globals[i];
+      if ((v._name || '') === 'score') { level = v._value; break; }
+    }
+
+    // Update HUD
+    $score.textContent = level + ' / ' + required;
+
+    // Show PASSED badge when target reached (but don't stop the game)
+    if (level >= required && !passed) {
+      passed = true;
+      $status.textContent = 'PASSED';
+      $status.className = 'passed';
+      // Submit answer — player survived
+      if (!submitted) {
+        submitted = true;
+        postToNative({ type: 'SUBMIT_ANSWER', payload: { gameType: 'tap_tap_shoot', correct: true, score: level, timeTakenMs: Date.now() - startTs } });
+      }
+    }
+
+    // Keep updating score even after passing (player keeps playing for fun)
+    if (passed && level > required) {
+      $score.textContent = level + ' / ' + required;
+    }
+  }, 300);
+
+  // Notify native when ready
+  var readyCheck = setInterval(function() {
+    if (window.c3_runtimeInterface && window.c3_runtimeInterface._localRuntime) {
+      clearInterval(readyCheck);
+      postToNative({ type: 'READY' });
+    }
+  }, 200);
+})();
+</script>
+</body></html>

@@ -6,12 +6,15 @@ import type { GameRendererProps } from './types';
 
 /**
  * Dispatches to the correct game renderer based on gameType.
- * - If bundleUrl is provided, renders the game via WebView bridge.
+ * - bundleUrl present: renders via WebView bridge (standard + C3 games).
  * - Otherwise falls back to the native registry (TriviaGame, QuickMathGame, etc.).
  * - Shows a friendly fallback if the game type is unknown.
+ *
+ * C3 games bundle their own index.html + SDK on CDN for now.
+ * Future: local SDK optimization via C3GameWebViewBridge after native build.
  */
 export function GameRenderer(props: GameRendererProps) {
-  // WebView path: bundleUrl takes priority over native registry
+  // WebView path: bundleUrl points to index.html (works for both standard + C3 games)
   if (props.bundleUrl) {
     return (
       <GameWebViewBridge

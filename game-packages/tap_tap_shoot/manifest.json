@@ -1,0 +1,17 @@
+{
+  "id": "tap_tap_shoot",
+  "name": "Tap Tap Shoot",
+  "version": "1.3.0",
+  "description": "Tap to shoot hoops — reach the target score to survive",
+  "engine": "construct3",
+  "layout": "fullscreen",
+  "configSchema": {
+    "requiredScore": {
+      "type": "number",
+      "label": "Score to reach",
+      "required": false,
+      "min": 1,
+      "max": 50
+    }
+  }
+}

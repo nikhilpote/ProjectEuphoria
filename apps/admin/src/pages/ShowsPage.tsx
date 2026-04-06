@@ -31,6 +31,7 @@ const GAME_TYPES = [
   'spelling_bee',
   'find_items',
   'memory_grid',
+  'tap_tap_shoot',
 ];
 
 const GAME_TYPE_LABELS: Record<string, string> = {
@@ -43,6 +44,7 @@ const GAME_TYPE_LABELS: Record<string, string> = {
   spelling_bee: 'Spelling Bee',
   find_items: 'Find Items',
   memory_grid: 'Memory Grid',
+  tap_tap_shoot: 'Tap Tap Shoot',
 };
 
 const GAME_TYPE_SHORT: Record<string, string> = {
@@ -55,6 +57,7 @@ const GAME_TYPE_SHORT: Record<string, string> = {
   spelling_bee: 'SB',
   find_items: 'FI',
   memory_grid: 'MG',
+  tap_tap_shoot: 'TTS',
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -152,6 +155,8 @@ function defaultConfig(gameType: string): Record<string, unknown> {
     return { knifeAtCenter: { level: 'Level1' } };
   if (gameType === 'hangman')
     return { hangman: { category: 'Animals' } };
+  if (gameType === 'tap_tap_shoot')
+    return { tapTapShoot: { requiredScore: 4 } };
   return {};
 }
 
@@ -235,6 +240,15 @@ const GAME_TEMPLATE = [
       },
     },
     timeLimitMs: 30000,
+  },
+  {
+    gameType: 'tap_tap_shoot',
+    config: {
+      tapTapShoot: {
+        requiredScore: 4,
+      },
+    },
+    timeLimitMs: 45000,
   },
 ];
 
@@ -749,6 +763,29 @@ function MarkerCard({
     if (marker.gameType === 'hangman') {
       return (
         <HangmanConfigForm config={marker.config} onChange={(c) => onUpdate({ config: c })} />
+      );
+    }
+    if (marker.gameType === 'tap_tap_shoot') {
+      const tts = (marker.config?.tapTapShoot ?? {}) as Record<string, unknown>;
+      return (
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+            Score to reach
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={20}
+            value={(tts.requiredScore as number) ?? 4}
+            onChange={(e) =>
+              onUpdate({
+                config: { tapTapShoot: { ...tts, requiredScore: parseInt(e.target.value) || 4 } },
+              })
+            }
+            className="w-24 rounded-md bg-gray-800 border border-gray-700 px-2 py-1 text-sm text-gray-100 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none"
+          />
+          <span className="text-[10px] text-gray-600">Players must reach this score to survive</span>
+        </div>
       );
     }
     return (

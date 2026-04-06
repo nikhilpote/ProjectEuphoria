@@ -1067,6 +1067,228 @@ function SpotDifferenceLevelsPanel({ packageId: _packageId }: SpotDifferenceLeve
   );
 }
 
+// ─── JsonLevelsPanel (knife_at_center etc.) ──────────────────────────────────
+
+function JsonLevelsPanel({ packageId }: { packageId: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [levels, setLevels] = useState<GameLevel[]>([]);
+  const [loadingLevels, setLoadingLevels] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+  const [hasFetched, setHasFetched] = useState(false);
+
+  const [editorLevelId, setEditorLevelId] = useState<string | null>(null); // null = new
+  const [editorName, setEditorName] = useState('');
+  const [editorJson, setEditorJson] = useState('');
+  const [editorJsonErr, setEditorJsonErr] = useState('');
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const fetchLevels = useCallback(async () => {
+    setLoadingLevels(true);
+    setListError(null);
+    try {
+      const res = await fetch(`${BASE_URL}/admin/games/${packageId}/levels`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json() as { success: boolean; data: GameLevel[] };
+      setLevels(Array.isArray(body.data) ? body.data : []);
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Failed to load levels');
+    } finally {
+      setLoadingLevels(false);
+      setHasFetched(true);
+    }
+  }, [packageId]);
+
+  useEffect(() => {
+    if (expanded && !hasFetched && !loadingLevels) fetchLevels();
+  }, [expanded, hasFetched, loadingLevels, fetchLevels]);
+
+  const openNew = () => {
+    setEditorLevelId(null);
+    setEditorName('');
+    setEditorJson('');
+    setEditorJsonErr('');
+    setSaveError(null);
+    setEditorOpen(true);
+  };
+
+  const openEdit = (level: GameLevel) => {
+    setEditorLevelId(level.id);
+    setEditorName(level.name);
+    setEditorJson(JSON.stringify(level.config, null, 2));
+    setEditorJsonErr('');
+    setSaveError(null);
+    setEditorOpen(true);
+  };
+
+  const closeEditor = () => setEditorOpen(false);
+
+  const handleJsonChange = (text: string) => {
+    setEditorJson(text);
+    if (!text.trim()) { setEditorJsonErr(''); return; }
+    try { JSON.parse(text); setEditorJsonErr(''); }
+    catch (e) { setEditorJsonErr(e instanceof Error ? e.message : 'Invalid JSON'); }
+  };
+
+  const handleSave = async () => {
+    const name = editorName.trim();
+    if (!name) { setSaveError('Level name is required.'); return; }
+    if (!editorJson.trim()) { setSaveError('Level JSON is required.'); return; }
+    let config: Record<string, unknown>;
+    try {
+      config = JSON.parse(editorJson);
+      if (typeof config !== 'object' || config === null || Array.isArray(config)) throw new Error('Must be an object');
+    } catch { setSaveError('Invalid JSON object.'); return; }
+
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const url = editorLevelId
+        ? `${BASE_URL}/admin/games/${packageId}/levels/${editorLevelId}`
+        : `${BASE_URL}/admin/games/${packageId}/levels`;
+      const res = await fetch(url, {
+        method: editorLevelId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, config }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { message?: string }).message ?? `HTTP ${res.status}`);
+      }
+      closeEditor();
+      await fetchLevels();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (level: GameLevel) => {
+    if (!window.confirm(`Delete level "${level.name}"?`)) return;
+    try {
+      const res = await fetch(`${BASE_URL}/admin/games/${packageId}/levels/${level.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setLevels((prev) => prev.filter((l) => l.id !== level.id));
+      if (editorLevelId === level.id) closeEditor();
+    } catch (err) {
+      alert(`Delete failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  return (
+    <div className="border-t border-euphoria-border mt-4 pt-4">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="flex items-center gap-2 cursor-pointer select-none text-sm font-semibold text-gray-400 hover:text-gray-200 transition-colors w-full text-left"
+      >
+        <svg className={['h-3.5 w-3.5 shrink-0 transition-transform duration-200', expanded ? 'rotate-90' : ''].join(' ')} viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+        </svg>
+        Levels
+        {!loadingLevels && <span className="ml-1 text-xs font-normal text-gray-600">({levels.length})</span>}
+        {loadingLevels && <Spinner />}
+      </button>
+
+      {expanded && (
+        <div className="mt-3 space-y-3">
+          {listError && (
+            <p className="text-red-400 text-xs">
+              Failed to load levels: {listError}{' '}
+              <button onClick={fetchLevels} className="underline hover:text-red-300">Retry</button>
+            </p>
+          )}
+
+          {levels.length > 0 && (
+            <div className="space-y-1">
+              {levels.map((level) => {
+                const cfg = level.config as Record<string, unknown>;
+                const diff = (cfg.difficulty as string) ?? '';
+                const diffColors: Record<string, string> = {
+                  easy: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+                  medium: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+                  hard: 'text-red-400 bg-red-500/10 border-red-500/20',
+                  boss: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
+                };
+                return (
+                  <div key={level.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-900/50 border border-euphoria-border">
+                    <span className="text-sm font-semibold text-gray-200 flex-1 truncate">{level.name}</span>
+                    {diff && <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${diffColors[diff] ?? 'text-gray-400 bg-gray-800 border-gray-700'}`}>{diff}</span>}
+                    <button onClick={() => openEdit(level)} className="text-xs text-gray-400 hover:text-gray-100 transition-colors shrink-0 px-2 py-1 rounded hover:bg-white/5">Edit</button>
+                    <button onClick={() => handleDelete(level)} className="text-xs text-red-500/70 hover:text-red-400 transition-colors shrink-0 px-2 py-1 rounded hover:bg-red-500/5">Delete</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {!loadingLevels && levels.length === 0 && !listError && (
+            <p className="text-xs text-gray-600 italic">No levels yet.</p>
+          )}
+
+          {!editorOpen && (
+            <button
+              onClick={openNew}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-euphoria-purple/40 text-euphoria-purple text-xs font-semibold hover:bg-euphoria-purple/10 transition-colors w-full"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+              </svg>
+              Add Level
+            </button>
+          )}
+
+          {editorOpen && (
+            <div className="rounded-xl border border-euphoria-border bg-gray-900/40 p-4 space-y-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Level name</label>
+                <input
+                  type="text"
+                  value={editorName}
+                  onChange={(e) => setEditorName(e.target.value)}
+                  placeholder="e.g. Level 1, Boss 3"
+                  className="bg-gray-900 border border-euphoria-border rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-euphoria-purple w-full placeholder-gray-600"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Level config (JSON)</label>
+                <textarea
+                  value={editorJson}
+                  onChange={(e) => handleJsonChange(e.target.value)}
+                  rows={12}
+                  placeholder={'{\n  "difficulty": "easy",\n  "wheelSprite": "spin",\n  "rotationType": "constant",\n  "rotationSpeed": 180,\n  "preplacedKnives": [],\n  "throwCount": 5\n}'}
+                  className="w-full bg-gray-900 border border-euphoria-border rounded-lg px-3 py-2 text-xs font-mono text-gray-100 focus:outline-none focus:ring-1 focus:ring-euphoria-purple placeholder-gray-600 resize-y leading-relaxed"
+                />
+                {editorJsonErr && <p className="text-red-400 text-[10px] mt-1 font-mono">{editorJsonErr}</p>}
+              </div>
+              <div className="flex items-center gap-3 pt-1 justify-end">
+                <button onClick={closeEditor} className="text-xs text-gray-400 hover:text-gray-200 transition-colors px-3 py-1.5">Cancel</button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving || !!editorJsonErr}
+                  className={[
+                    'inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                    'bg-euphoria-purple text-white hover:bg-violet-500',
+                    (saving || !!editorJsonErr) ? 'opacity-60 cursor-not-allowed' : '',
+                  ].join(' ')}
+                >
+                  {saving ? <><Spinner /> Saving…</> : 'Save Level'}
+                </button>
+              </div>
+              {saveError && <p className="text-red-400 text-xs">{saveError}</p>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Packages that get the JSON levels panel ─────────────────────────────────
+const JSON_LEVEL_PACKAGES = new Set(['knife_at_center']);
+
 // ─── PackageCard ──────────────────────────────────────────────────────────────
 
 interface PackageCardProps {
@@ -1148,6 +1370,11 @@ function PackageCard({ pkg, onToggle, onDelete }: PackageCardProps) {
           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono text-euphoria-purple bg-euphoria-purple/10 border border-euphoria-purple/20">
             {pkg.version}
           </span>
+          {(pkg.manifest as Record<string, unknown>)?.engine === 'construct3' && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium text-amber-400 bg-amber-400/10 border border-amber-400/20">
+              C3
+            </span>
+          )}
         </div>
 
         {/* Description */}
@@ -1210,6 +1437,11 @@ function PackageCard({ pkg, onToggle, onDelete }: PackageCardProps) {
         {/* Spot Difference levels panel */}
         {pkg.manifest?.id === 'spot_difference' && (
           <SpotDifferenceLevelsPanel packageId={pkg.id} />
+        )}
+
+        {/* JSON levels panel (knife_at_center etc.) */}
+        {JSON_LEVEL_PACKAGES.has(pkg.manifest?.id) && (
+          <JsonLevelsPanel packageId={pkg.id} />
         )}
       </div>
     </div>
