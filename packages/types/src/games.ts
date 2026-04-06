@@ -16,7 +16,8 @@ export type GameType =
   | 'knife_at_center'
   | 'find_items'
   | 'tap_tap_shoot'
-  | 'wording';
+  | 'wording'
+  | 'emoji-puzzle';
 
 // ---------------------------------------------------------------------------
 // Trivia

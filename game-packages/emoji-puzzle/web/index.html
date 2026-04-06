@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Emoji Match</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    html, body {
+      background: #0D0D1A;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      height: 100%;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    #root {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 10px 14px 8px;
+      gap: 8px;
+      position: relative;
+    }
+
+    /* Stars background */
+    #stars {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 0;
+    }
+    .star {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.6);
+      animation: twinkle 3s infinite ease-in-out alternate;
+    }
+    @keyframes twinkle {
+      from { opacity: 0.2; transform: scale(1); }
+      to   { opacity: 0.9; transform: scale(1.5); }
+    }
+
+    /* Timer */
+    #timer-track {
+      width: 100%;
+      height: 4px;
+      background: #2A2A4A;
+      border-radius: 2px;
+      overflow: hidden;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 2;
+    }
+    #timer-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #7C3AED, #A855F7);
+      border-radius: 2px;
+      transform-origin: left;
+      transition: transform 0.1s linear, background 0.3s;
+    }
+    #timer-fill.urgent { background: linear-gradient(90deg, #EF4444, #F97316); }
+
+    /* HUD */
+    #hud {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 2;
+    }
+    #score-label {
+      font-size: 12px;
+      color: #9CA3AF;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    #score-display {
+      font-size: 22px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.02em;
+    }
+    #score-display .score-num { color: #F59E0B; }
+    #score-display .score-sep { color: #4B5563; }
+    #score-display .score-req { color: #9CA3AF; }
+
+    #passed-badge {
+      display: none;
+      align-items: center;
+      gap: 5px;
+      background: linear-gradient(135deg, #10B981, #059669);
+      border-radius: 20px;
+      padding: 5px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      box-shadow: 0 0 16px rgba(16,185,129,0.5);
+      animation: badgePop 0.4s cubic-bezier(0.34,1.56,0.64,1) both;
+    }
+    #passed-badge.show { display: flex; }
+    @keyframes badgePop {
+      from { transform: scale(0.5); opacity: 0; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+
+    #category-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #7C3AED;
+      text-align: center;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 2;
+    }
+
+    /* Game arena */
+    #arena {
+      flex: 1;
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      position: relative;
+      z-index: 2;
+      min-height: 0;
+    }
+
+    .col {
+      flex: 0 0 72px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+      gap: 0;
+      padding: 4px 0;
+    }
+    #col-left  { align-items: flex-end; }
+    #col-right { align-items: flex-start; }
+
+    #canvas-layer {
+      flex: 1;
+      position: relative;
+      overflow: visible;
+    }
+    #line-svg {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      pointer-events: none;
+      z-index: 3;
+    }
+    #arena { overflow: visible; }
+
+    .emoji-btn {
+      width: 60px;
+      height: 60px;
+      border-radius: 16px;
+      border: 2px solid #2A2A4A;
+      background: #1A1A2E;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 30px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, transform 0.12s;
+      position: relative;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      flex-shrink: 0;
+    }
+    .emoji-btn:active { transform: scale(0.93); }
+
+    .emoji-btn.selected {
+      border-color: #7C3AED;
+      background: rgba(124,58,237,0.2);
+      box-shadow: 0 0 0 3px rgba(124,58,237,0.35);
+      animation: pulse-sel 0.6s ease infinite alternate;
+    }
+    @keyframes pulse-sel {
+      from { box-shadow: 0 0 0 3px rgba(124,58,237,0.35); }
+      to   { box-shadow: 0 0 0 6px rgba(124,58,237,0.1); }
+    }
+
+    .emoji-btn.matched-correct {
+      border-color: #10B981;
+      background: rgba(16,185,129,0.15);
+      pointer-events: none;
+      animation: matchPop 0.35s cubic-bezier(0.34,1.56,0.64,1) both;
+    }
+    @keyframes matchPop {
+      0%   { transform: scale(1); }
+      50%  { transform: scale(1.18); }
+      100% { transform: scale(1); }
+    }
+
+    .emoji-btn.wrong-flash {
+      border-color: #EF4444 !important;
+      background: rgba(239,68,68,0.4) !important;
+      box-shadow: 0 0 16px rgba(239,68,68,0.6), inset 0 0 12px rgba(239,68,68,0.3) !important;
+      animation: wrongShake 0.45s ease both;
+    }
+    @keyframes wrongShake {
+      0%   { transform: translateX(0); }
+      20%  { transform: translateX(-5px); }
+      40%  { transform: translateX(5px); }
+      60%  { transform: translateX(-4px); }
+      80%  { transform: translateX(4px); }
+      100% { transform: translateX(0); }
+    }
+
+    /* SVG lines */
+    .match-line {
+      stroke-width: 3;
+      stroke-linecap: round;
+      fill: none;
+      transition: stroke-dashoffset 0.3s ease;
+    }
+    .match-line.correct  { stroke: #10B981; filter: drop-shadow(0 0 4px rgba(16,185,129,0.6)); }
+    .match-line.pending  { stroke: #7C3AED; stroke-dasharray: 6 4; opacity: 0.7; }
+
+    /* Floating +1 particle */
+    .score-pop {
+      position: fixed;
+      font-size: 20px;
+      font-weight: 800;
+      color: #F59E0B;
+      pointer-events: none;
+      z-index: 999;
+      text-shadow: 0 0 12px rgba(245,158,11,0.8);
+      animation: floatUp 0.8s ease forwards;
+    }
+    @keyframes floatUp {
+      0%   { opacity: 1; transform: translateY(0) scale(1); }
+      100% { opacity: 0; transform: translateY(-60px) scale(1.4); }
+    }
+
+    /* Confetti burst */
+    .confetti-dot {
+      position: fixed;
+      width: 7px;
+      height: 7px;
+      border-radius: 2px;
+      pointer-events: none;
+      z-index: 998;
+    }
+
+    /* Hint line (dragging) */
+    #hint-line {
+      stroke: rgba(124,58,237,0.5);
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      stroke-dasharray: 6 4;
+      fill: none;
+      pointer-events: none;
+    }
+
+    /* Round over overlay */
+    #round-over {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(13,13,26,0.88);
+      gap: 10px;
+    }
+    #round-over.show { display: flex; }
+    #round-over .big-emoji { font-size: 60px; animation: popIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
+    #round-over .result-text { font-size: 28px; font-weight: 800; animation: popIn 0.4s 0.1s cubic-bezier(0.34,1.56,0.64,1) both; }
+    #round-over .result-sub  { font-size: 15px; color: #9CA3AF; animation: popIn 0.4s 0.2s cubic-bezier(0.34,1.56,0.64,1) both; }
+    @keyframes popIn {
+      from { transform: scale(0.4); opacity: 0; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+
+    /* Timer text small */
+    #timer-text {
+      text-align: right;
+      font-size: 12px;
+      font-weight: 700;
+      color: #4B5563;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 2;
+      margin-top: -6px;
+    }
+    #timer-text.urgent { color: #EF4444; }
+  </style>
+</head>
+<body>
+
+<div id="stars"></div>
+
+<div id="root">
+  <div id="timer-track"><div id="timer-fill"></div></div>
+  <div id="timer-text">0s</div>
+
+  <div id="hud">
+    <div>
+      <div id="score-label">Score</div>
+      <div id="score-display">
+        <span id="sn" class="score-num">0</span><span class="score-sep"> / </span><span id="sr" class="score-req">5</span>
+      </div>
+    </div>
+    <div id="passed-badge">
+      <span>&#10003;</span> PASSED
+    </div>
+  </div>
+
+  <div id="category-label">Match the Pairs</div>
+
+  <div id="arena">
+    <div class="col" id="col-left"></div>
+    <div id="canvas-layer">
+    </div>
+    <svg id="line-svg">
+      <line id="hint-line" x1="0" y1="0" x2="0" y2="0" style="display:none"/>
+    </svg>
+    <div class="col" id="col-right"></div>
+  </div>
+</div>
+
+<div id="round-over">
+  <div class="big-emoji" id="ro-emoji">&#127881;</div>
+  <div class="result-text" id="ro-text">Time's Up!</div>
+  <div class="result-sub" id="ro-sub">You matched 4 / 5 pairs</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  LEVEL DATA  — 15 levels, 5 pairs each
+// ═══════════════════════════════════════════════════════════
+var LEVELS = [
+  {
+    category: "Weather & Gear",
+    pairs: [
+      { left: "\u{1F327}\uFE0F", right: "\u2602\uFE0F" },
+      { left: "\u2600\uFE0F",     right: "\u{1F576}\uFE0F" },
+      { left: "\u2744\uFE0F",     right: "\u{1F9E4}" },
+      { left: "\u{1F32A}\uFE0F",  right: "\u{1F3E0}" },
+      { left: "\u{1F321}\uFE0F",  right: "\u{1F9E5}" }
+    ]
+  },
+  {
+    category: "Fire & Ice",
+    pairs: [
+      { left: "\u{1F525}",  right: "\u{1F9EF}" },
+      { left: "\u{1F9CA}",  right: "\u{1F376}" },
+      { left: "\u{1F32C}\uFE0F", right: "\u{1FA81}" },
+      { left: "\u{1F4A7}",  right: "\u{1F6BF}" },
+      { left: "\u2600\uFE0F",  right: "\u{1F3D6}\uFE0F" }
+    ]
+  },
+  {
+    category: "Food & Drink",
+    pairs: [
+      { left: "\u{1F355}",  right: "\u{1F37A}" },
+      { left: "\u{1F363}",  right: "\u{1F962}" },
+      { left: "\u{1F366}",  right: "\u{1F967}" },
+      { left: "\u{1F354}",  right: "\u{1F35F}" },
+      { left: "\u{1F375}",  right: "\u{1F359}" }
+    ]
+  },
+  {
+    category: "Animals & Homes",
+    pairs: [
+      { left: "\u{1F426}",  right: "\u{1FAB9}" },
+      { left: "\u{1F41F}",  right: "\u{1F41A}" },
+      { left: "\u{1F43B}",  right: "\u{1F3D4}\uFE0F" },
+      { left: "\u{1F422}",  right: "\u{1F3DD}\uFE0F" },
+      { left: "\u{1F411}",  right: "\u{1F332}" }
+    ]
+  },
+  {
+    category: "Sports & Kit",
+    pairs: [
+      { left: "\u26BD",     right: "\u{1F945}" },
+      { left: "\u{1F3BE}",  right: "\u{1F3F8}" },
+      { left: "\u{1F3C0}",  right: "\u{1F3C6}" },
+      { left: "\u{1F3CA}\uFE0F", right: "\u{1FA7D}" },
+      { left: "\u{1F94A}",  right: "\u{1F97E}" }
+    ]
+  },
+  {
+    category: "Feelings",
+    pairs: [
+      { left: "\u{1F60D}",  right: "\u2764\uFE0F" },
+      { left: "\u{1F62D}",  right: "\u{1F9FB}" },
+      { left: "\u{1F634}",  right: "\u{1F4A4}" },
+      { left: "\u{1F621}",  right: "\u{1F4A5}" },
+      { left: "\u{1F973}",  right: "\u{1F388}" }
+    ]
+  },
+  {
+    category: "Jobs & Tools",
+    pairs: [
+      { left: "\u{1F468}\u200D\u2695\uFE0F", right: "\u{1FA7A}" },
+      { left: "\u{1F468}\u200D\u{1F373}",    right: "\u{1F52A}" },
+      { left: "\u{1F477}",                    right: "\u{1F9F1}" },
+      { left: "\u{1F468}\u200D\u{1F3EB}",    right: "\u{1F4DA}" },
+      { left: "\u{1F46E}",                    right: "\u{1F6A8}" }
+    ]
+  },
+  {
+    category: "Travel",
+    pairs: [
+      { left: "\u2708\uFE0F",  right: "\u{1F6C2}" },
+      { left: "\u{1F697}",     right: "\u26FD" },
+      { left: "\u{1F6F3}\uFE0F", right: "\u2693" },
+      { left: "\u{1F682}",     right: "\u{1F6E4}\uFE0F" },
+      { left: "\u{1F6B2}",     right: "\u{1F6E3}\uFE0F" }
+    ]
+  },
+  {
+    category: "Music & Dance",
+    pairs: [
+      { left: "\u{1F3B8}",  right: "\u{1F3B5}" },
+      { left: "\u{1F941}",  right: "\u{1F3B7}" },
+      { left: "\u{1F3B9}",  right: "\u{1FA97}" },
+      { left: "\u{1F57A}",  right: "\u{1F4BF}" },
+      { left: "\u{1F399}\uFE0F", right: "\u{1F3A4}" }
+    ]
+  },
+  {
+    category: "Nature",
+    pairs: [
+      { left: "\u{1F332}",  right: "\u{1F341}" },
+      { left: "\u{1F30B}",  right: "\u{1F525}" },
+      { left: "\u{1F33B}",  right: "\u{1F41D}" },
+      { left: "\u{1F30A}",  right: "\u{1F3C4}" },
+      { left: "\u{1F344}",  right: "\u{1F327}\uFE0F" }
+    ]
+  },
+  {
+    category: "Tech & Gadgets",
+    pairs: [
+      { left: "\u{1F4F1}",  right: "\u{1F50B}" },
+      { left: "\u{1F4BB}",  right: "\u{1F5B1}\uFE0F" },
+      { left: "\u{1F4F7}",  right: "\u{1F4F8}" },
+      { left: "\u{1F3AE}",  right: "\u{1F579}\uFE0F" },
+      { left: "\u{1F4FA}",  right: "\u{1F4E1}" }
+    ]
+  },
+  {
+    category: "Celebrations",
+    pairs: [
+      { left: "\u{1F382}",  right: "\u{1F36D}" },
+      { left: "\u{1F384}",  right: "\u{1F381}" },
+      { left: "\u{1F9E8}",  right: "\u{1F973}" },
+      { left: "\u{1F451}",  right: "\u{1F947}" },
+      { left: "\u{1F37E}",  right: "\u{1F942}" }
+    ]
+  },
+  {
+    category: "Body & Health",
+    pairs: [
+      { left: "\u{1F9E0}",  right: "\u{1F4DA}" },
+      { left: "\u{1F4AA}",  right: "\u{1F3CB}\uFE0F" },
+      { left: "\u{1F441}\uFE0F", right: "\u{1F50D}" },
+      { left: "\u{1F9B7}",  right: "\u{1FA78}" },
+      { left: "\u{1F9B4}",  right: "\u2695\uFE0F" }
+    ]
+  },
+  {
+    category: "Space",
+    pairs: [
+      { left: "\u{1F680}",  right: "\u{1F315}" },
+      { left: "\u{1F47D}",  right: "\u{1F6F8}" },
+      { left: "\u2B50",     right: "\u{1F52D}" },
+      { left: "\u{1FA90}",  right: "\u{1F6F0}\uFE0F" },
+      { left: "\u{1F30C}",  right: "\u2604\uFE0F" }
+    ]
+  },
+  {
+    category: "Ocean",
+    pairs: [
+      { left: "\u{1F40B}",  right: "\u{1F30A}" },
+      { left: "\u{1F980}",  right: "\u{1F3D6}\uFE0F" },
+      { left: "\u{1F419}",  right: "\u{1FAB8}" },
+      { left: "\u26F5",     right: "\u{1F9ED}" },
+      { left: "\u{1F988}",  right: "\u{1FAE7}" }
+    ]
+  }
+];
+
+// ═══════════════════════════════════════════════════════════
+//  GAME STATE
+// ═══════════════════════════════════════════════════════════
+var timeLimitMs   = 30000;
+var requiredScore = 4;
+var levelIndex    = 0;
+var score         = 0;
+var submitted     = false;
+var passedPosted  = false;
+var startTs       = null;
+var rafId         = null;
+var gameStarted   = false;
+
+var selectedLeft  = -1;   // index of selected left emoji (-1 = none)
+var matchedPairs  = [];   // array of pair indices that are matched
+var leftPositions = [];   // {x, y} center of each left emoji in svg space
+var rightPositions= [];   // {x, y} center of each right emoji in svg space
+var rightOrder    = [];   // shuffled right column indices
+var pairCount     = 5;
+
+// ═══════════════════════════════════════════════════════════
+//  DOM REFS
+// ═══════════════════════════════════════════════════════════
+var $fill       = document.getElementById('timer-fill');
+var $timerText  = document.getElementById('timer-text');
+var $sn         = document.getElementById('sn');
+var $sr         = document.getElementById('sr');
+var $passedBadge= document.getElementById('passed-badge');
+var $catLabel   = document.getElementById('category-label');
+var $colLeft    = document.getElementById('col-left');
+var $colRight   = document.getElementById('col-right');
+var $svg        = document.getElementById('line-svg');
+var $hintLine   = document.getElementById('hint-line');
+var $arena      = document.getElementById('arena');
+var $roundOver  = document.getElementById('round-over');
+var $roEmoji    = document.getElementById('ro-emoji');
+var $roText     = document.getElementById('ro-text');
+var $roSub      = document.getElementById('ro-sub');
+
+// ═══════════════════════════════════════════════════════════
+//  STARS BACKGROUND
+// ═══════════════════════════════════════════════════════════
+(function buildStars() {
+  var container = document.getElementById('stars');
+  for (var i = 0; i < 40; i++) {
+    var s = document.createElement('div');
+    s.className = 'star';
+    var size = Math.random() * 2 + 1;
+    s.style.cssText = [
+      'width:' + size + 'px',
+      'height:' + size + 'px',
+      'left:' + (Math.random() * 100) + '%',
+      'top:' + (Math.random() * 100) + '%',
+      'animation-delay:' + (Math.random() * 4) + 's',
+      'animation-duration:' + (2 + Math.random() * 3) + 's'
+    ].join(';');
+    container.appendChild(s);
+  }
+})();
+
+// ═══════════════════════════════════════════════════════════
+//  UTILITIES
+// ═══════════════════════════════════════════════════════════
+function shuffle(arr) {
+  var a = arr.slice();
+  for (var i = a.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+
+function getCenter(el, relativeTo) {
+  var er  = el.getBoundingClientRect();
+  var rr  = relativeTo.getBoundingClientRect();
+  return {
+    x: er.left + er.width / 2 - rr.left,
+    y: er.top  + er.height / 2 - rr.top
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════════════
+function renderLevel() {
+  var level = LEVELS[levelIndex % LEVELS.length];
+  pairCount = level.pairs.length;
+
+  $catLabel.textContent = level.category;
+
+  // Shuffle right column
+  var indices = [];
+  for (var i = 0; i < pairCount; i++) indices.push(i);
+  rightOrder = shuffle(indices);
+
+  matchedPairs  = [];
+  selectedLeft  = -1;
+  leftPositions = [];
+  rightPositions= [];
+
+  // Clear columns and SVG lines
+  $colLeft.innerHTML  = '';
+  $colRight.innerHTML = '';
+
+  // Remove all non-hint SVG children
+  var toRemove = [];
+  for (var n = 0; n < $svg.childNodes.length; n++) {
+    if ($svg.childNodes[n] !== $hintLine) toRemove.push($svg.childNodes[n]);
+  }
+  for (var r = 0; r < toRemove.length; r++) $svg.removeChild(toRemove[r]);
+
+  // Build left column
+  for (var i = 0; i < pairCount; i++) {
+    (function(idx) {
+      var btn = document.createElement('div');
+      btn.className = 'emoji-btn';
+      btn.id = 'L' + idx;
+      btn.textContent = level.pairs[idx].left;
+      btn.addEventListener('click', function() { onLeftTap(idx); });
+      $colLeft.appendChild(btn);
+    })(i);
+  }
+
+  // Build right column (shuffled)
+  for (var j = 0; j < pairCount; j++) {
+    (function(displayPos, pairIdx) {
+      var btn = document.createElement('div');
+      btn.className = 'emoji-btn';
+      btn.id = 'R' + pairIdx;
+      btn.textContent = level.pairs[pairIdx].right;
+      btn.addEventListener('click', function() { onRightTap(pairIdx); });
+      $colRight.appendChild(btn);
+    })(j, rightOrder[j]);
+  }
+
+  // Measure positions after a brief paint delay
+  setTimeout(capturePositions, 80);
+}
+
+function capturePositions() {
+  leftPositions  = [];
+  rightPositions = [];
+
+  for (var i = 0; i < pairCount; i++) {
+    var lBtn = document.getElementById('L' + i);
+    var rBtn = document.getElementById('R' + i);
+    if (lBtn) leftPositions[i]  = getCenter(lBtn, $arena);
+    if (rBtn) rightPositions[i] = getCenter(rBtn, $arena);
+  }
+}
+
+// Recapture on resize
+window.addEventListener('resize', function() {
+  setTimeout(capturePositions, 100);
+});
+
+// ═══════════════════════════════════════════════════════════
+//  INPUT HANDLERS
+// ═══════════════════════════════════════════════════════════
+function onLeftTap(idx) {
+  if (submitted) return;
+  if (matchedPairs.indexOf(idx) !== -1) return; // already matched
+
+  // Deselect previous
+  if (selectedLeft !== -1) {
+    var prev = document.getElementById('L' + selectedLeft);
+    if (prev) prev.classList.remove('selected');
+  }
+
+  if (selectedLeft === idx) {
+    // Toggle off
+    selectedLeft = -1;
+    $hintLine.style.display = 'none';
+    return;
+  }
+
+  selectedLeft = idx;
+  var btn = document.getElementById('L' + idx);
+  if (btn) btn.classList.add('selected');
+
+  // Show hint dot at left emoji center
+  if (leftPositions[idx]) {
+    var lp = leftPositions[idx];
+    $hintLine.setAttribute('x1', lp.x);
+    $hintLine.setAttribute('y1', lp.y);
+    $hintLine.setAttribute('x2', lp.x);
+    $hintLine.setAttribute('y2', lp.y);
+    $hintLine.style.display = 'block';
+  }
+}
+
+function onRightTap(pairIdx) {
+  if (submitted) return;
+  if (selectedLeft === -1) return; // must select left first
+  if (matchedPairs.indexOf(pairIdx) !== -1) return;
+
+  $hintLine.style.display = 'none';
+
+  var lBtn = document.getElementById('L' + selectedLeft);
+  var rBtn = document.getElementById('R' + pairIdx);
+
+  if (selectedLeft === pairIdx) {
+    // CORRECT
+    score++;
+    matchedPairs.push(pairIdx);
+
+    if (lBtn) { lBtn.classList.remove('selected'); lBtn.classList.add('matched-correct'); }
+    if (rBtn) rBtn.classList.add('matched-correct');
+
+    drawLine(selectedLeft, pairIdx, true);
+    spawnScorePop(rBtn);
+    spawnConfetti(rBtn);
+    updateHUD();
+
+    selectedLeft = -1;
+
+    if (score >= requiredScore && !passedPosted) {
+      passedPosted = true;
+      $passedBadge.classList.add('show');
+      postToNative({
+        type: 'SUBMIT_ANSWER',
+        payload: {
+          gameType: 'emoji-puzzle',
+          correct: true,
+          selectedOptionId: String(score),
+          score: score,
+          required: requiredScore
+        }
+      });
+    }
+
+    // All pairs matched — show completed overlay
+    if (matchedPairs.length === pairCount) {
+      submitted = true;
+      setTimeout(function() {
+        $roEmoji.textContent = '\u{1F389}';
+        $roText.textContent = 'COMPLETED!';
+        $roText.style.color = '#10B981';
+        $roSub.textContent = 'You matched all ' + pairCount + ' pairs';
+        $roundOver.classList.add('show');
+      }, 500);
+    }
+
+  } else {
+    // WRONG
+    if (lBtn) {
+      lBtn.classList.remove('selected');
+      lBtn.classList.add('wrong-flash');
+      setTimeout(function() { lBtn.classList.remove('wrong-flash'); }, 400);
+    }
+    if (rBtn) {
+      rBtn.classList.add('wrong-flash');
+      setTimeout(function() { rBtn.classList.remove('wrong-flash'); }, 400);
+    }
+    selectedLeft = -1;
+  }
+}
+
+function nextLevel() {
+  levelIndex++;
+  renderLevel();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DRAG SUPPORT — drag from left emoji to right emoji
+// ═══════════════════════════════════════════════════════════
+var dragging = false;
+var dragLeftIdx = -1;
+
+function getTouchXY(e) {
+  var t = e.touches ? e.touches[0] : e;
+  return { x: t.clientX, y: t.clientY };
+}
+
+function findEmojiAtPoint(x, y, side) {
+  var col = side === 'right' ? $colRight : $colLeft;
+  var children = col.children;
+  for (var i = 0; i < children.length; i++) {
+    var r = children[i].getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+      var id = children[i].id;
+      return parseInt(id.substring(1));
+    }
+  }
+  return -1;
+}
+
+document.addEventListener('touchstart', function(e) {
+  if (submitted || !gameStarted) return;
+  var pt = getTouchXY(e);
+  var idx = findEmojiAtPoint(pt.x, pt.y, 'left');
+  if (idx === -1) return;
+  if (matchedPairs.indexOf(idx) !== -1) return;
+
+  dragging = true;
+  dragLeftIdx = idx;
+  onLeftTap(idx);
+
+  // Update hint line to touch position
+  var arR = $arena.getBoundingClientRect();
+  $hintLine.setAttribute('x2', pt.x - arR.left);
+  $hintLine.setAttribute('y2', pt.y - arR.top);
+}, { passive: true });
+
+document.addEventListener('touchmove', function(e) {
+  if (!dragging || dragLeftIdx === -1) return;
+  var pt = getTouchXY(e);
+  var arR = $arena.getBoundingClientRect();
+  $hintLine.setAttribute('x2', pt.x - arR.left);
+  $hintLine.setAttribute('y2', pt.y - arR.top);
+  $hintLine.style.display = 'block';
+}, { passive: true });
+
+document.addEventListener('touchend', function(e) {
+  if (!dragging || dragLeftIdx === -1) return;
+  dragging = false;
+
+  var pt = e.changedTouches ? e.changedTouches[0] : e;
+  var rightIdx = findEmojiAtPoint(pt.clientX, pt.clientY, 'right');
+
+  if (rightIdx !== -1) {
+    onRightTap(rightIdx);
+  } else {
+    // Dropped outside — deselect
+    var prev = document.getElementById('L' + dragLeftIdx);
+    if (prev) prev.classList.remove('selected');
+    selectedLeft = -1;
+    $hintLine.style.display = 'none';
+  }
+  dragLeftIdx = -1;
+}, { passive: true });
+
+// ═══════════════════════════════════════════════════════════
+//  SVG LINES
+// ═══════════════════════════════════════════════════════════
+function drawLine(leftIdx, rightIdx, correct) {
+  var lp = leftPositions[leftIdx];
+  var rp = rightPositions[rightIdx];
+  if (!lp || !rp) return;
+
+  var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line.setAttribute('x1', lp.x);
+  line.setAttribute('y1', lp.y);
+  line.setAttribute('x2', rp.x);
+  line.setAttribute('y2', rp.y);
+  line.setAttribute('class', 'match-line ' + (correct ? 'correct' : 'pending'));
+  $svg.insertBefore(line, $hintLine);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PARTICLES
+// ═══════════════════════════════════════════════════════════
+function spawnScorePop(anchorEl) {
+  if (!anchorEl) return;
+  var r = anchorEl.getBoundingClientRect();
+  var el = document.createElement('div');
+  el.className = 'score-pop';
+  el.textContent = '+1';
+  el.style.left = (r.left + r.width / 2 - 14) + 'px';
+  el.style.top  = (r.top - 4) + 'px';
+  document.body.appendChild(el);
+  setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 850);
+}
+
+function spawnConfetti(anchorEl) {
+  if (!anchorEl) return;
+  var r = anchorEl.getBoundingClientRect();
+  var colors = ['#F59E0B','#10B981','#7C3AED','#EF4444','#3B82F6','#EC4899'];
+  for (var i = 0; i < 10; i++) {
+    (function(ii) {
+      var dot = document.createElement('div');
+      dot.className = 'confetti-dot';
+      dot.style.background = colors[ii % colors.length];
+      dot.style.left = (r.left + r.width / 2) + 'px';
+      dot.style.top  = (r.top + r.height / 2) + 'px';
+      document.body.appendChild(dot);
+      var angle = (Math.random() * 360) * (Math.PI / 180);
+      var dist  = 30 + Math.random() * 50;
+      var tx    = Math.cos(angle) * dist;
+      var ty    = Math.sin(angle) * dist;
+      dot.animate([
+        { transform: 'translate(0,0) rotate(0deg)', opacity: 1 },
+        { transform: 'translate(' + tx + 'px,' + ty + 'px) rotate(' + (Math.random()*360) + 'deg)', opacity: 0 }
+      ], { duration: 500 + Math.random() * 300, easing: 'ease-out', fill: 'forwards' });
+      setTimeout(function() { if (dot.parentNode) dot.parentNode.removeChild(dot); }, 900);
+    })(i);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  HUD
+// ═══════════════════════════════════════════════════════════
+function updateHUD() {
+  $sn.textContent = score;
+  $sr.textContent = requiredScore;
+
+  // Bounce the score number
+  $sn.animate([
+    { transform: 'scale(1.6)', color: '#F59E0B' },
+    { transform: 'scale(1)',   color: '#F59E0B' }
+  ], { duration: 300, easing: 'cubic-bezier(0.34,1.56,0.64,1)' });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TIMER
+// ═══════════════════════════════════════════════════════════
+function startTimer() {
+  startTs = Date.now();
+  (function tick() {
+    var elapsed   = Date.now() - startTs;
+    var remaining = Math.max(0, timeLimitMs - elapsed);
+    var frac      = remaining / timeLimitMs;
+
+    $fill.style.transform = 'scaleX(' + frac + ')';
+    $fill.classList.toggle('urgent', remaining < 6000);
+
+    var secs = Math.ceil(remaining / 1000);
+    $timerText.textContent = secs + 's';
+    $timerText.classList.toggle('urgent', remaining < 6000);
+
+    if (remaining <= 0) {
+      onTimeUp();
+      return;
+    }
+    rafId = requestAnimationFrame(tick);
+  })();
+}
+
+function onTimeUp() {
+  cancelAnimationFrame(rafId);
+  $fill.style.transform = 'scaleX(0)';
+
+  if (!submitted && !passedPosted) {
+    submitted = true;
+    postToNative({
+      type: 'SUBMIT_ANSWER',
+      payload: {
+        gameType: 'emoji-puzzle',
+        selectedOptionId: String(score),
+        score: score,
+        required: requiredScore
+      }
+    });
+  }
+
+  var passed = score >= requiredScore;
+  $roEmoji.textContent = passed ? '\u{1F389}' : '\u23F0';
+  $roText.textContent  = passed ? 'Well Done!' : "Time's Up!";
+  $roSub.textContent   = 'You matched ' + score + ' / ' + requiredScore + ' pairs';
+  $roundOver.classList.add('show');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════
+function parseInit(payload) {
+  if (!payload) return;
+  if (gameStarted) return;
+  gameStarted = true;
+
+  timeLimitMs   = payload.timeLimitMs   || 30000;
+  requiredScore = payload.requiredScore || 4;
+  levelIndex    = (payload.level != null ? payload.level : 0) % LEVELS.length;
+
+  $sr.textContent = requiredScore;
+  renderLevel();
+  startTimer();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  NATIVE BRIDGE
+// ═══════════════════════════════════════════════════════════
+function postToNative(msg) {
+  var str = JSON.stringify(msg);
+  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(str);
+  else window.parent.postMessage(str, '*');
+}
+
+// 3-channel reception
+window.addEventListener('message', function(e) {
+  var msg;
+  try { msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch(err) { return; }
+  if (msg && msg.type === 'GAME_INIT') {
+    parseInit(msg.payload ? Object.assign({}, msg.payload, { timeLimitMs: msg.timeLimitMs || (msg.payload && msg.payload.timeLimitMs) }) : msg);
+  }
+});
+
+(function() {
+  function go(g) {
+    parseInit(g.payload ? Object.assign({}, g.payload, { timeLimitMs: g.timeLimitMs || (g.payload && g.payload.timeLimitMs) }) : g);
+  }
+  if (location.hash && location.hash.length > 1) {
+    try { go(JSON.parse(decodeURIComponent(location.hash.slice(1)))); return; } catch(e) {}
+  }
+  if (window.__EUPHORIA_GAME__) { go(window.__EUPHORIA_GAME__); return; }
+  // Dev fallback: start with defaults if no init received in 2s
+  setTimeout(function() {
+    if (!gameStarted) {
+      parseInit({ timeLimitMs: 30000, requiredScore: 4, level: 0 });
+    }
+  }, 2000);
+})();
+
+setTimeout(function() { postToNative({ type: 'READY' }); }, 300);
+</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+{
+  "id": "emoji-puzzle",
+  "name": "Emoji Match",
+  "version": "1.0.0",
+  "description": "Draw connections between matching emoji pairs before time runs out.",
+  "layout": "fullscreen",
+
+  "configSchema": {
+    "requiredScore": {
+      "type": "number",
+      "label": "Pairs needed to pass",
+      "required": true,
+      "min": 1,
+      "max": 5
+    },
+    "level": {
+      "type": "number",
+      "label": "Level index (0–14, each is a different category)",
+      "required": false,
+      "min": 0,
+      "max": 14
+    },
+    "timeLimitMs": {
+      "type": "number",
+      "label": "Round duration (ms)",
+      "required": false,
+      "min": 10000,
+      "max": 60000
+    }
+  }
+}

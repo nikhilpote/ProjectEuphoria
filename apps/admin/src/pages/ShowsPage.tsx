@@ -33,6 +33,7 @@ const GAME_TYPES = [
   'memory_grid',
   'tap_tap_shoot',
   'wording',
+  'emoji-puzzle',
 ];
 
 const GAME_TYPE_LABELS: Record<string, string> = {
@@ -47,6 +48,7 @@ const GAME_TYPE_LABELS: Record<string, string> = {
   memory_grid: 'Memory Grid',
   tap_tap_shoot: 'Tap Tap Shoot',
   wording: 'Wording',
+  'emoji-puzzle': 'Emoji Match',
 };
 
 const GAME_TYPE_SHORT: Record<string, string> = {
@@ -61,6 +63,7 @@ const GAME_TYPE_SHORT: Record<string, string> = {
   memory_grid: 'MG',
   tap_tap_shoot: 'TTS',
   wording: 'WRD',
+  'emoji-puzzle': 'EMJ',
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -162,6 +165,8 @@ function defaultConfig(gameType: string): Record<string, unknown> {
     return { tapTapShoot: { requiredScore: 4 } };
   if (gameType === 'wording')
     return { wording: { requiredScore: 10 } };
+  if (gameType === 'emoji-puzzle')
+    return { emojiPuzzle: { requiredScore: 4, level: 0 } };
   return {};
 }
 
@@ -263,6 +268,16 @@ const GAME_TEMPLATE = [
       },
     },
     timeLimitMs: 99000,
+  },
+  {
+    gameType: 'emoji-puzzle',
+    config: {
+      emojiPuzzle: {
+        requiredScore: 4,
+        level: 0,
+      },
+    },
+    timeLimitMs: 30000,
   },
 ];
 
@@ -912,6 +927,72 @@ function MarkerCard({
     if (marker.gameType === 'wording') {
       return (
         <WordingConfigForm config={marker.config} onChange={(c) => onUpdate({ config: c })} />
+      );
+    }
+    if (marker.gameType === 'emoji-puzzle') {
+      const ep = (marker.config?.emojiPuzzle ?? {}) as Record<string, unknown>;
+      const emojiLevels = [
+        { cat: 'Weather & Gear', preview: '🌧️→☂️ ☀️→🕶️ ❄️→🧤 🌪️→🏠 🌡️→🧥' },
+        { cat: 'Fire & Ice', preview: '🔥→🧯 🧊→🍶 🌬️→🪁 💧→🚿 ☀️→🏖️' },
+        { cat: 'Food & Drink', preview: '🍕→🍺 🍣→🥢 🍦→🥧 🍔→🍟 🍵→🍙' },
+        { cat: 'Animals & Homes', preview: '🐦→🪹 🐟→🐚 🐻→🏔️ 🐢→🏝️ 🐑→🌲' },
+        { cat: 'Sports & Kit', preview: '⚽→🥅 🎾→🏸 🏀→🏆 🏊️→🩽 🥊→🥾' },
+        { cat: 'Feelings', preview: '😍→❤️ 😭→🧻 😴→💤 😡→💥 🥳→🎈' },
+        { cat: 'Jobs & Tools', preview: '👨‍⚕️→🩺 👨‍🍳→🔪 👷→🧱 👨‍🏫→📚 👮→🚨' },
+        { cat: 'Travel', preview: '✈️→🛂 🚗→⛽ 🛳️→⚓ 🚂→🛤️ 🚲→🛣️' },
+        { cat: 'Music & Dance', preview: '🎸→🎵 🥁→🎷 🎹→🪗 🕺→💿 🎙️→🎤' },
+        { cat: 'Nature', preview: '🌲→🍁 🌋→🔥 🌻→🐝 🌊→🏄 🍄→🌧️' },
+        { cat: 'Tech & Gadgets', preview: '📱→🔋 💻→🖱️ 📷→📸 🎮→🕹️ 📺→📡' },
+        { cat: 'Celebrations', preview: '🎂→🍭 🎄→🎁 🧨→🥳 👑→🥇 🍾→🥂' },
+        { cat: 'Body & Health', preview: '🧠→📚 💪→🏋️ 👁️→🔍 🦷→🩸 🦴→⚕️' },
+        { cat: 'Space', preview: '🚀→🌕 👽→🛸 ⭐→🔭 🪐→🛰️ 🌌→☄️' },
+        { cat: 'Ocean', preview: '🐋→🌊 🦀→🏖️ 🐙→🪸 ⛵→🧭 🦈→🫧' },
+      ];
+      const selLevel = (ep.level as number) ?? 0;
+      return (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+              Pairs to match
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={5}
+              value={(ep.requiredScore as number) ?? 4}
+              onChange={(e) =>
+                onUpdate({
+                  config: { emojiPuzzle: { ...ep, requiredScore: parseInt(e.target.value) || 4 } },
+                })
+              }
+              className="w-24 rounded-md bg-gray-800 border border-gray-700 px-2 py-1 text-sm text-gray-100 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+              Level
+            </label>
+            <select
+              value={selLevel}
+              onChange={(e) =>
+                onUpdate({
+                  config: { emojiPuzzle: { ...ep, level: parseInt(e.target.value) || 0 } },
+                })
+              }
+              className="w-full px-3 py-2 rounded-lg bg-[#0A0A14] border border-[#2A2A4A] text-sm text-gray-100 focus:outline-none focus:border-[#7C3AED] transition-colors"
+            >
+              <option value={0}>Random</option>
+              {emojiLevels.map((l, i) => (
+                <option key={i} value={i + 1}>{i + 1}. {l.cat}</option>
+              ))}
+            </select>
+          </div>
+          {selLevel > 0 && selLevel <= emojiLevels.length && (
+            <div className="p-2 rounded-lg bg-[#0A0A14] border border-[#2A2A4A] text-center text-lg leading-relaxed tracking-wider">
+              {emojiLevels[selLevel - 1].preview}
+            </div>
+          )}
+        </div>
       );
     }
     return (

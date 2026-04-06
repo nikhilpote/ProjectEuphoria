@@ -8,6 +8,7 @@ import { KnifeAtCenterHandler } from './handlers/knife-at-center.handler';
 import { HangmanHandler } from './handlers/hangman.handler';
 import { TapTapShootHandler } from './handlers/tap-tap-shoot.handler';
 import { WordingHandler } from './handlers/wording.handler';
+import { EmojiPuzzleHandler } from './handlers/emoji-puzzle.handler';
 
 /**
  * GamesModule aggregates all mini-game sub-modules and the game handler registry.
@@ -33,5 +34,6 @@ export class GamesModule implements OnModuleInit {
     this.registry.register(new HangmanHandler());
     this.registry.register(new TapTapShootHandler());
     this.registry.register(new WordingHandler());
+    this.registry.register(new EmojiPuzzleHandler());
   }
 }
