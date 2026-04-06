@@ -41,6 +41,10 @@ COPY --from=builder /app/package.json ./package.json
 # migrate.ts uses path.join(__dirname, 'migrations') → dist/database/migrations/
 COPY --from=builder /app/apps/api/src/database/migrations ./apps/api/dist/database/migrations
 
+# Copy seed SQL files (idempotent — every seed uses ON CONFLICT)
+# migrate.ts also runs seeds from path.join(__dirname, 'seeds')
+COPY --from=builder /app/apps/api/src/database/seeds ./apps/api/dist/database/seeds
+
 # Copy entrypoint
 COPY deploy/staging/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

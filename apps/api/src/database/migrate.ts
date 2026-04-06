@@ -67,6 +67,23 @@ async function migrate(): Promise<void> {
     }
 
     console.log('Migrations complete.');
+
+    // ── Run seeds (idempotent — every file uses ON CONFLICT) ──
+    const seedsDir = path.join(__dirname, 'seeds');
+    if (fs.existsSync(seedsDir)) {
+      const seedFiles = fs.readdirSync(seedsDir).filter((f) => f.endsWith('.sql')).sort();
+      for (const file of seedFiles) {
+        try {
+          const sql = fs.readFileSync(path.join(seedsDir, file), 'utf8');
+          await client.query(sql);
+          console.log(`  [seed] ${file}`);
+        } catch (err) {
+          console.error(`  [seed-fail] ${file}:`, err);
+          throw err;
+        }
+      }
+      console.log('Seeds complete.');
+    }
   } finally {
     client.release();
     await pool.end();
