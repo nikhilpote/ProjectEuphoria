@@ -378,8 +378,9 @@
 <div id="root">
   <div id="hud">
     <div id="score-display">
-      <span id="score-label">SCORE</span>
       <span id="score-val">0</span>
+      <span id="score-sep"> / </span>
+      <span id="score-req">5</span>
       <span id="passed-badge">PASSED</span>
     </div>
     <div id="timer-info">
@@ -862,12 +863,7 @@ function parseInit(payload) {
   requiredScore  = clamp(requiredScore, 1, 50);
 
   $scoreVal.textContent = '0';
-  var target = document.createElement('span');
-  target.style.color = '#9CA3AF';
-  target.style.fontSize = '14px';
-  target.style.fontWeight = '500';
-  target.textContent = ' / ' + requiredScore;
-  $scoreVal.after(target);
+  document.getElementById('score-req').textContent = requiredScore;
 
   $loading.classList.add('hidden');
 
